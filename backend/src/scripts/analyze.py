@@ -24,18 +24,28 @@ def analyze_file(file_path):
             try:
                 # Primary Method: Use COM automation with Word (Accurate & supports .doc)
                 import comtypes.client
-                word = comtypes.client.CreateObject('Word.Application')
-                word.Visible = False
-                word.DisplayAlerts = 0
+                
+                word_app = None
+                is_new_instance = False
+                
+                try:
+                    word_app = comtypes.client.GetActiveObject("Word.Application")
+                    is_new_instance = False
+                except:
+                    word_app = comtypes.client.CreateObject("Word.Application")
+                    is_new_instance = True
+                    word_app.Visible = False
+                    word_app.DisplayAlerts = 0
                 
                 try:
                     # Open file (ReadOnly, not visible)
-                    doc = word.Documents.Open(file_path, ReadOnly=True, Visible=False)
+                    doc = word_app.Documents.Open(file_path, ReadOnly=True, Visible=False)
                     # wdStatisticPages = 2
                     page_count = doc.ComputeStatistics(2)
                     doc.Close(SaveChanges=False)
                 finally:
-                    word.Quit()
+                    if is_new_instance and word_app:
+                        word_app.Quit()
 
             except Exception as e:
                 # Fallback method if Word automation fails
