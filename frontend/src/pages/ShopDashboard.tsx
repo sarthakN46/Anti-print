@@ -12,6 +12,34 @@ const ShopDashboard = () => {
   const { user, logout } = useContext(AuthContext)!;
   const navigate = useNavigate();
   
+  // Mobile Restriction
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  if (isMobile) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          <div className="bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+            <LayoutDashboard size={32} />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Desktop Only</h2>
+          <p className="text-slate-500 dark:text-slate-400 mb-6">
+            The Shop Dashboard is optimized for desktop use to manage orders efficiently. Please switch to a larger screen.
+          </p>
+          <button onClick={() => { logout(); navigate('/login'); }} className="btn btn-outline w-full justify-center">
+            Go Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const [orders, setOrders] = useState<any[]>([]);
   const [shop, setShop] = useState<any>(null);
   const [stats, setStats] = useState({ pending: 0, printed: 0, revenue: 0 });
@@ -110,7 +138,7 @@ const ShopDashboard = () => {
     fetchShopDetails();
     fetchOrders();
 
-    const newSocket = io('http://localhost:5000');
+    const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
     setSocket(newSocket);
 
     return () => { newSocket.close(); };

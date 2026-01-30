@@ -63,7 +63,7 @@ const UserDashboard = () => {
 
   // Socket Listener for Notifications
   useEffect(() => {
-     const socket = io('http://localhost:5000');
+     const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
 
      if (user) {
         socket.emit('join_user', user._id);
