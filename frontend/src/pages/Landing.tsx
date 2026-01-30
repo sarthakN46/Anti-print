@@ -148,10 +148,14 @@ const Landing = () => {
                <span className="font-bold text-lg">XeroxSaaS</span>
             </div>
             <p className="text-slate-400 text-sm order-3 md:order-2">© 2026 XeroxSaaS Inc. All rights reserved.</p>
-            <div className="flex gap-6 text-sm text-slate-400 order-2 md:order-3">
+            <div className="flex gap-6 text-sm text-slate-400 order-2 md:order-3 items-center">
                <a href="#" className="hover:text-primary">Privacy</a>
                <a href="#" className="hover:text-primary">Terms</a>
-               <a href="#" className="hover:text-primary">Contact</a>
+               <div className="flex items-center gap-2 border-l border-slate-700 pl-6">
+                  <Link to="/support" className="text-xs font-bold uppercase text-slate-500 hover:text-primary transition-colors">
+                     Customer Care
+                  </Link>
+               </div>
             </div>
          </div>
       </footer>

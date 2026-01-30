@@ -197,6 +197,9 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
       .digest("hex");
 
     if (generated_signature !== razorpay_signature) {
+       order.paymentStatus = 'FAILED';
+       order.orderStatus = 'CANCELLED';
+       await order.save();
        res.status(400).json({ message: 'Payment verification failed: Invalid Signature' });
        return;
     }
@@ -361,7 +364,21 @@ export const cancelOrder = async (req: AuthRequest, res: Response): Promise<void
       const userId = order.user && (order.user as any)._id ? (order.user as any)._id.toString() : order.user?.toString();
 
       io.to(shopId).emit('order_status_updated', order);
-      if (userId) io.to(userId).emit('order_status_updated', order);
+      if (userId) {
+          io.to(userId).emit('order_status_updated', order);
+          // Send specific notifications
+          if (order.paymentStatus === 'REFUNDED') {
+             io.to(userId).emit('notification', { 
+               message: `Order #${order._id.toString().slice(-4)} Cancelled. Refund Initiated.`, 
+               type: 'info' 
+             });
+          } else {
+             io.to(userId).emit('notification', { 
+               message: `Order #${order._id.toString().slice(-4)} Cancelled by Shop.`, 
+               type: 'error' 
+             });
+          }
+      }
     } catch (e) {
       console.error('Socket emission failed', e);
     }
