@@ -1,0 +1,57 @@
+services:
+  # 1. Database
+  mongo:
+    image: mongo:6.0
+    container_name: xerox_mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "${MONGO_PORT}:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  # 2. Real-time Message Broker & Cache
+  redis:
+    image: redis:alpine
+    container_name: xerox_redis
+    restart: always
+    ports:
+      - "${REDIS_PORT}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  # 3. Object Storage (S3 Compatible)
+  minio:
+    image: minio/minio
+    container_name: xerox_storage
+    restart: always
+    ports:
+      - "${MINIO_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+  # 4. Create the Default Bucket automatically
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      /usr/bin/mc mb myminio/${MINIO_DEFAULT_BUCKET};
+      /usr/bin/mc anonymous set download myminio/${MINIO_DEFAULT_BUCKET};
+      exit 0;
+      "
+
+volumes:
+  mongo_data:
+  redis_data:
+  minio_data:

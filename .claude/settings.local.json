@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(del \"C:\\\\Users\\\\zamba\\\\OneDrive\\\\Desktop\\\\TEMP\\\\Nowaits\\\\Nowaits - Copy\\\\XeroxSaaS\\\\frontend\\\\src\\\\pages\\\\UserDashboard.tsx\")",
+      "Bash(git mv:*)"
+    ]
+  }
+}
