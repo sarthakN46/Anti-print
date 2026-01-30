@@ -273,31 +273,74 @@ const UserDashboard = () => {
     }, 0);
   };
 
+  const loadRazorpay = () => {
+    return new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
   const handleCheckout = async () => {
     if (cart.length === 0 || !selectedShop) return;
+    
+    const res = await loadRazorpay();
+    if (!res) {
+      toast.error('Razorpay SDK failed to load. Are you online?');
+      return;
+    }
+
     try {
+      // 1. Create Order in Backend
       const { data: order } = await api.post('/orders', {
         shopId: selectedShop._id,
         items: cart
       });
-      await api.post('/orders/checkout', { orderId: order._id });
-      const userConfirmed = window.confirm(
-        `Authorized Payment Gateway (Mock)\n\n` +
-        `Merchant: ${selectedShop.name}\n` +
-        `Amount: ₹${order.totalAmount}\n\n` +
-        `Click OK to Pay Securely`
-      );
-      if (userConfirmed) {
-         await api.post('/orders/verify', {
-            orderId: order._id,
-            paymentId: `pay_mock_${Date.now()}`
-         });
-         toast.success('Payment Successful! Order sent to shop.');
-         setCart([]);
-         setShowMobileCart(false);
-      } else {
-         toast.error('Payment Cancelled');
-      }
+
+      // 2. Init Payment in Backend
+      const { data: paymentOrder } = await api.post('/orders/checkout', { orderId: order._id });
+
+      // 3. Open Razorpay Options
+      const options = {
+        key: paymentOrder.keyId, 
+        amount: paymentOrder.amount,
+        currency: paymentOrder.currency,
+        name: "XeroxSaaS",
+        description: `Print Order #${order._id.slice(-4)}`,
+        order_id: paymentOrder.id,
+        handler: async function (response: any) {
+           // 4. Verify Payment on Backend
+           try {
+              const verifyRes = await api.post('/orders/verify', {
+                 orderId: order._id,
+                 razorpay_payment_id: response.razorpay_payment_id,
+                 razorpay_order_id: response.razorpay_order_id,
+                 razorpay_signature: response.razorpay_signature
+              });
+              
+              if(verifyRes.data.status === 'success'){
+                 toast.success('Payment Successful!');
+                 setCart([]);
+                 setShowMobileCart(false);
+              }
+           } catch (err) {
+              toast.error('Payment Verification Failed');
+           }
+        },
+        prefill: {
+          name: user?.name,
+          email: user?.email,
+        },
+        theme: {
+          color: "#3399cc"
+        }
+      };
+
+      const paymentObject = new (window as any).Razorpay(options);
+      paymentObject.open();
+
     } catch (err: any) {
       toast.error('Order processing failed');
     }
