@@ -40,6 +40,11 @@ io.on('connection', (socket) => {
     console.log(`Socket ${socket.id} joined shop ${shopId}`);
   });
 
+  socket.on('join_user', (userId) => {
+    socket.join(userId);
+    console.log(`Socket ${socket.id} joined user ${userId}`);
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected');
   });

@@ -113,9 +113,12 @@ const UserDashboard = () => {
   useEffect(() => {
      const socket = io('http://localhost:5000');
 
-     socket.on('order_status_updated', (updatedOrder: any) => {
-        // 1. Check if this order belongs to the logged-in user
-        // updatedOrder.user might be an ObjectId string or an Object depending on populate
+     if (user) {
+        socket.emit('join_user', user._id);
+     }
+
+     const handleOrderUpdate = (updatedOrder: any) => {
+        // 1. Check if this order belongs to the logged-in user (Redundant if joined user room, but safe)
         const orderUserId = typeof updatedOrder.user === 'string' ? updatedOrder.user : updatedOrder.user?._id;
         
         if (user && orderUserId === user._id) {
@@ -135,7 +138,10 @@ const UserDashboard = () => {
            }
            return prev;
         });
-     });
+     };
+
+     socket.on('order_status_updated', handleOrderUpdate);
+     socket.on('order_updated', handleOrderUpdate); // For conversion updates
 
      return () => { socket.disconnect(); };
   }, [user]);

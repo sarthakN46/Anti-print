@@ -96,6 +96,7 @@ export const processOrderFiles = async (orderId: string) => {
             try {
                const io = getIO();
                io.to(order.shop.toString()).emit('order_updated', order);
+               io.to(order.user.toString()).emit('order_updated', order); // Notify User
             } catch (e) {
                console.error('[ConversionService] Failed to emit socket event', e);
             }

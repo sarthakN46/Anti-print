@@ -4,6 +4,7 @@ import Order from '../models/Order';
 import Shop from '../models/Shop';
 import s3, { BUCKET_NAME } from '../config/s3';
 import { processOrderFiles } from '../services/conversionService';
+import { getIO } from '../utils/socket';
 
 // Helper: Generate a random 4-digit pickup code
 const generatePickupCode = () => Math.floor(1000 + Math.random() * 9000).toString();
@@ -179,9 +180,14 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
     await order.populate('user', 'name email');
 
     // Emit Socket Event (Only after payment success)
-    const io = req.app.get('io');
-    if (io) {
+    try {
+      const io = getIO();
+      // Notify Shop
       io.to(order.shop.toString()).emit('new_order', order);
+      // Notify User (ensure they see the status change immediately if listening)
+      io.to(order.user._id.toString()).emit('order_status_updated', order);
+    } catch (e) {
+      console.error('Socket emission failed', e);
     }
 
     // Trigger Background Conversion (Fire & Forget)
@@ -236,19 +242,13 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
     order.orderStatus = status;
     await order.save();
 
-    // Emit Socket Event to User
-    const io = req.app.get('io');
-    if (io) {
-       // We emit to the specific User's room (if we had user rooms) or just general for MVP.
-       // Since we don't have user rooms set up in server.ts explicitly for users,
-       // we can emit to the SHOP room (which user might not be in) OR
-       // we can emit a global event and client filters it? No, that's bad.
-       // Better: Let's emit to `order._id`. Client joins `order._id` room?
-       // Or simpler: server.ts needs to join user to their userID room.
-       
-       // For now, let's assume we broadcast and client filters by their ID (Not secure but works for MVP local)
-       // OR: let's fix server.ts to join user room.
-       io.emit('order_status_updated', order);
+    // Emit Socket Event to User & Shop
+    try {
+       const io = getIO();
+       io.to(order.shop.toString()).emit('order_status_updated', order);
+       io.to(order.user.toString()).emit('order_status_updated', order);
+    } catch (e) {
+       console.error('Socket emission failed', e);
     }
 
     res.json(order);
@@ -306,9 +306,12 @@ export const cancelOrder = async (req: AuthRequest, res: Response): Promise<void
     await order.populate('user', 'name email');
 
     // Emit Socket Event
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('order_status_updated', order);
+    try {
+      const io = getIO();
+      io.to(order.shop.toString()).emit('order_status_updated', order);
+      io.to(order.user._id.toString()).emit('order_status_updated', order);
+    } catch (e) {
+      console.error('Socket emission failed', e);
     }
 
     res.json({ message: 'Order cancelled successfully', order });
