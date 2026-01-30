@@ -6,13 +6,15 @@ interface IOrderItem {
   fileHash: string;     // SHA-256 for Batching
   fileType?: string;    // 'pdf', 'docx', 'pptx', etc.
   pageCount: number;    // Total pages in doc
+  convertedKey?: string; // S3 Key for the pre-converted PDF
   config: {
     color: 'bw' | 'color';
     side: 'single' | 'double';
     copies: number;
     paperType: string;
     pageRange?: string;
-    slidesPerPage?: number; // New Setting
+    orientation?: 'portrait' | 'landscape';
+    paperSize?: 'A4' | 'A3' | 'A2' | 'A1';
   };
   calculatedCost: number; // The price for THIS specific file
 }
@@ -44,13 +46,15 @@ const OrderSchema = new Schema<IOrder>({
     fileHash: { type: String, required: true }, // <--- The Batching Key
     fileType: { type: String }, // New
     pageCount: { type: Number, required: true },
+    convertedKey: { type: String }, // New
     config: {
       color: { type: String, enum: ['bw', 'color'], default: 'bw' },
       side: { type: String, enum: ['single', 'double'], default: 'single' },
       copies: { type: Number, default: 1 },
       paperType: { type: String, default: 'A4_75gsm' },
       pageRange: { type: String, default: 'All' },
-      slidesPerPage: { type: Number } // New Setting
+      orientation: { type: String, enum: ['portrait', 'landscape'], default: 'portrait' },
+      paperSize: { type: String, enum: ['A4', 'A3', 'A2', 'A1'], default: 'A4' }
     },
     calculatedCost: { type: Number, required: true }
   }],

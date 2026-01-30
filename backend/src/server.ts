@@ -13,6 +13,7 @@ import authRoutes from './routes/authRoutes';
 import shopRoutes from './routes/shopRoutes'; 
 import uploadRoutes from './routes/uploadRoutes'; 
 import orderRoutes from './routes/orderRoutes';
+import { initSocket } from './utils/socket';
 
 // 1. Initialize App
 const app = express();
@@ -28,6 +29,8 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+initSocket(io);
 
 io.on('connection', (socket) => {
   console.log('New client connected', socket.id);

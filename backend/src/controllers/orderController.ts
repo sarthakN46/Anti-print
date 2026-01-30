@@ -3,6 +3,7 @@ import { AuthRequest } from '../middlewares/authMiddleware';
 import Order from '../models/Order';
 import Shop from '../models/Shop';
 import s3, { BUCKET_NAME } from '../config/s3';
+import { processOrderFiles } from '../services/conversionService';
 
 // Helper: Generate a random 4-digit pickup code
 const generatePickupCode = () => Math.floor(1000 + Math.random() * 9000).toString();
@@ -182,6 +183,9 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
     if (io) {
       io.to(order.shop.toString()).emit('new_order', order);
     }
+
+    // Trigger Background Conversion (Fire & Forget)
+    processOrderFiles(order._id.toString());
 
     res.json({ status: 'success', order });
 

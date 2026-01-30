@@ -138,8 +138,23 @@ const ShopDashboard = () => {
         });
       };
 
+      const handleOrderUpdate = (updatedOrder: any) => {
+         setOrders(prev => {
+            const newOrders = prev.map(o => o._id === updatedOrder._id ? updatedOrder : o);
+            updateStats(newOrders);
+            return newOrders;
+         });
+      };
+
       socket.on('new_order', handleNewOrder);
-      return () => { socket.off('new_order', handleNewOrder); };
+      socket.on('order_updated', handleOrderUpdate);
+      socket.on('order_status_updated', handleOrderUpdate); // Listen to this too for status changes
+
+      return () => { 
+         socket.off('new_order', handleNewOrder);
+         socket.off('order_updated', handleOrderUpdate);
+         socket.off('order_status_updated', handleOrderUpdate);
+      };
     }
   }, [socket, shop]);
 
@@ -376,7 +391,7 @@ const ShopDashboard = () => {
                                   <FileText size={16} className="text-slate-600 dark:text-slate-400" />
                                   <span className="truncate max-w-[200px]">{item.originalName}</span>
                                   <button 
-                                    onClick={() => openPreview(item.storageKey, item.originalName, true)}
+                                    onClick={() => openPreview(item.convertedKey || item.storageKey, item.originalName, true)}
                                     className="ml-2 btn bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 text-[10px] py-1 px-3 shadow-none flex items-center gap-1"
                                   >
                                     <Printer size={12}/> Print
