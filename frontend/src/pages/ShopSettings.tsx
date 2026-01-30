@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Save, DollarSign, Package } from 'lucide-react';
+import { ArrowLeft, Save, DollarSign, Package, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const ShopSettings = () => {
@@ -13,7 +13,11 @@ const ShopSettings = () => {
   const [bw, setBw] = useState({ single: 0, double: 0 });
   const [color, setColor] = useState({ single: 0, double: 0 });
   const [bulk, setBulk] = useState({ enabled: false, threshold: 100, bwPrice: 0, colorPrice: 0 });
-  const [pptPricing, setPptPricing] = useState({ single: 3, two: 2.5, four: 2, six: 1.5, nine: 1 });
+  const [otherSizes, setOtherSizes] = useState({
+    A3: { bw: 6, color: 20 },
+    A2: { bw: 15, color: 50 },
+    A1: { bw: 30, color: 100 }
+  });
   
   useEffect(() => {
     fetchShopData();
@@ -26,7 +30,7 @@ const ShopSettings = () => {
       setBw(data.pricing.bw || { single: 3, double: 2 });
       setColor(data.pricing.color || { single: 10, double: 8 });
       setBulk(data.pricing.bulkDiscount || { enabled: false, threshold: 100, bwPrice: 1.5, colorPrice: 8 });
-      if (data.pricing.pptPricing) setPptPricing(data.pricing.pptPricing);
+      if (data.pricing.otherSizes) setOtherSizes(data.pricing.otherSizes);
       setLoading(false);
     } catch (error) {
       toast.error('Failed to load settings');
@@ -40,7 +44,7 @@ const ShopSettings = () => {
         bw,
         color,
         bulkDiscount: bulk,
-        pptPricing
+        otherSizes
       });
       toast.success('Pricing updated successfully');
     } catch (error) {
@@ -137,43 +141,6 @@ const ShopSettings = () => {
           </div>
         </section>
 
-        {/* PPT Pricing */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-          <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
-            <div className="p-3 bg-orange-100 text-orange-700 rounded-xl">
-              <Package size={24} />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">PPT Slides Pricing</h2>
-              <p className="text-sm text-slate-500">Set price per slide based on "Slides Per Page" layout.</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-             {[
-               { label: '1 Slide/Page', key: 'single' },
-               { label: '2 Slides/Page', key: 'two' },
-               { label: '4 Slides/Page', key: 'four' },
-               { label: '6 Slides/Page', key: 'six' },
-               { label: '9 Slides/Page', key: 'nine' }
-             ].map((opt) => (
-                <div key={opt.key}>
-                   <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">{opt.label}</label>
-                   <div className="relative">
-                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
-                       <input 
-                        type="number" step="0.1" min="0" className="input-field pl-6"
-                        // @ts-ignore
-                        value={pptPricing[opt.key]} 
-                        // @ts-ignore
-                        onChange={e => setPptPricing({...pptPricing, [opt.key]: parseFloat(e.target.value)})}
-                       />
-                   </div>
-                </div>
-             ))}
-          </div>
-        </section>
-
         {/* Bulk Discounts */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
@@ -224,6 +191,108 @@ const ShopSettings = () => {
                     type="number" step="0.1" className="input-field pl-6"
                     value={bulk.colorPrice} onChange={e => setBulk({...bulk, colorPrice: parseFloat(e.target.value)})}
                    />
+                </div>
+             </div>
+          </div>
+        </section>
+
+        {/* Other Paper Sizes */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+          <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+            <div className="p-3 bg-purple-100 text-purple-700 rounded-xl">
+              <FileText size={24} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Large Format Pricing</h2>
+              <p className="text-sm text-slate-500">Set prices for A3, A2, and A1 sizes.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+             {/* A3 */}
+             <div className="space-y-3">
+                <h3 className="font-bold text-slate-700">A3 Size</h3>
+                <div className="grid grid-cols-2 gap-3">
+                   <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">B&W</label>
+                      <div className="relative">
+                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
+                         <input 
+                          type="number" step="0.1" min="0" className="input-field pl-6"
+                          // @ts-ignore
+                          value={otherSizes.A3.bw} onChange={e => setOtherSizes({...otherSizes, A3: {...otherSizes.A3, bw: parseFloat(e.target.value)}})}
+                         />
+                      </div>
+                   </div>
+                   <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Color</label>
+                      <div className="relative">
+                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
+                         <input 
+                          type="number" step="0.1" min="0" className="input-field pl-6"
+                          // @ts-ignore
+                          value={otherSizes.A3.color} onChange={e => setOtherSizes({...otherSizes, A3: {...otherSizes.A3, color: parseFloat(e.target.value)}})}
+                         />
+                      </div>
+                   </div>
+                </div>
+             </div>
+
+             {/* A2 */}
+             <div className="space-y-3">
+                <h3 className="font-bold text-slate-700">A2 Size</h3>
+                <div className="grid grid-cols-2 gap-3">
+                   <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">B&W</label>
+                      <div className="relative">
+                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
+                         <input 
+                          type="number" step="0.1" min="0" className="input-field pl-6"
+                          // @ts-ignore
+                          value={otherSizes.A2.bw} onChange={e => setOtherSizes({...otherSizes, A2: {...otherSizes.A2, bw: parseFloat(e.target.value)}})}
+                         />
+                      </div>
+                   </div>
+                   <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Color</label>
+                      <div className="relative">
+                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
+                         <input 
+                          type="number" step="0.1" min="0" className="input-field pl-6"
+                          // @ts-ignore
+                          value={otherSizes.A2.color} onChange={e => setOtherSizes({...otherSizes, A2: {...otherSizes.A2, color: parseFloat(e.target.value)}})}
+                         />
+                      </div>
+                   </div>
+                </div>
+             </div>
+
+             {/* A1 */}
+             <div className="space-y-3">
+                <h3 className="font-bold text-slate-700">A1 Size</h3>
+                <div className="grid grid-cols-2 gap-3">
+                   <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">B&W</label>
+                      <div className="relative">
+                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
+                         <input 
+                          type="number" step="0.1" min="0" className="input-field pl-6"
+                          // @ts-ignore
+                          value={otherSizes.A1.bw} onChange={e => setOtherSizes({...otherSizes, A1: {...otherSizes.A1, bw: parseFloat(e.target.value)}})}
+                         />
+                      </div>
+                   </div>
+                   <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Color</label>
+                      <div className="relative">
+                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
+                         <input 
+                          type="number" step="0.1" min="0" className="input-field pl-6"
+                          // @ts-ignore
+                          value={otherSizes.A1.color} onChange={e => setOtherSizes({...otherSizes, A1: {...otherSizes.A1, color: parseFloat(e.target.value)}})}
+                         />
+                      </div>
+                   </div>
                 </div>
              </div>
           </div>

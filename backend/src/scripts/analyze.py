@@ -21,15 +21,40 @@ def analyze_file(file_path):
         
         elif ext in ['.docx', '.doc']:
             file_type = 'docx'
-            from docx import Document
-            doc = Document(file_path)
-            # Try core properties first
-            if doc.core_properties.page_count:
-                page_count = doc.core_properties.page_count
-            else:
-                # Fallback: Count sections (often 1) or paragraphs? 
-                # Let's default to 1 if property missing, as exact render is hard without Word.
-                page_count = 1 
+            try:
+                # Primary Method: Use COM automation with Word (Accurate & supports .doc)
+                import comtypes.client
+                word = comtypes.client.CreateObject('Word.Application')
+                word.Visible = False
+                word.DisplayAlerts = 0
+                
+                try:
+                    # Open file (ReadOnly, not visible)
+                    doc = word.Documents.Open(file_path, ReadOnly=True, Visible=False)
+                    # wdStatisticPages = 2
+                    page_count = doc.ComputeStatistics(2)
+                    doc.Close(SaveChanges=False)
+                finally:
+                    word.Quit()
+
+            except Exception as e:
+                # Fallback method if Word automation fails
+                # sys.stderr.write(f"COM Warning: {str(e)}\n") # Optional: log warning
+                
+                try:
+                    if ext == '.doc':
+                        # No pure python lib for .doc, fallback to 1
+                        page_count = 1
+                    else:
+                        # Fallback for .docx using metadata
+                        from docx import Document
+                        doc = Document(file_path)
+                        if doc.core_properties.page_count:
+                            page_count = doc.core_properties.page_count
+                        else:
+                            page_count = 1
+                except:
+                    page_count = 1 
         
         elif ext in ['.pptx', '.ppt']:
             file_type = 'pptx'

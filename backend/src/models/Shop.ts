@@ -26,12 +26,10 @@ export interface IShop extends Document {
       bwPrice: number;   // e.g., 1.5
       colorPrice: number; // e.g., 8
     };
-    pptPricing?: {
-      single: number;
-      two: number;
-      four: number;
-      six: number;
-      nine: number;
+    otherSizes: {
+      A3: { bw: number; color: number };
+      A2: { bw: number; color: number };
+      A1: { bw: number; color: number };
     };
   };
 }
@@ -66,12 +64,10 @@ const ShopSchema = new Schema<IShop>({
       bwPrice: { type: Number, default: 1.5 },
       colorPrice: { type: Number, default: 8.0 }
     },
-    pptPricing: {
-      single: { type: Number, default: 3.0 },
-      two: { type: Number, default: 2.5 },
-      four: { type: Number, default: 2.0 },
-      six: { type: Number, default: 1.5 },
-      nine: { type: Number, default: 1.0 }
+    otherSizes: {
+      A3: { bw: { type: Number, default: 6.0 }, color: { type: Number, default: 20.0 } },
+      A2: { bw: { type: Number, default: 15.0 }, color: { type: Number, default: 50.0 } },
+      A1: { bw: { type: Number, default: 30.0 }, color: { type: Number, default: 100.0 } }
     }
   }
 }, { timestamps: true });

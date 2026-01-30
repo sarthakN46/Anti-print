@@ -22,7 +22,8 @@ interface CartItem {
     side: 'single' | 'double';
     copies: number;
     pageRange: string;
-    slidesPerPage?: number; // New Setting for PPT
+    orientation: 'portrait' | 'landscape';
+    paperSize: 'A4' | 'A3' | 'A2' | 'A1';
   };
 }
 
@@ -216,7 +217,8 @@ const UserDashboard = () => {
         side: 'single', 
         copies: 1, 
         pageRange: 'All',
-        slidesPerPage: 1 // Default
+        orientation: 'portrait',
+        paperSize: 'A4'
       }
     }));
     setCart(prev => [...prev, ...newItems]);
@@ -234,49 +236,22 @@ const UserDashboard = () => {
     return cart.reduce((total, item) => {
       const isColor = item.config.color === 'color';
       const isDouble = item.config.side === 'double';
+      const size = item.config.paperSize;
       
       let rate = 0;
-      let totalSheets = 0;
+      let totalSheets = item.pageCount * item.config.copies;
 
-      if (item.fileType === 'pptx' && item.config.slidesPerPage) {
-          // PPT Specific Logic
-          const slidesPerPage = item.config.slidesPerPage;
-          totalSheets = Math.ceil(item.pageCount / slidesPerPage) * item.config.copies;
-          
-          const keyMap: {[key: number]: string} = { 1: 'single', 2: 'two', 4: 'four', 6: 'six', 9: 'nine' };
-          const key = keyMap[slidesPerPage];
+      // Handle Large Formats (A3, A2, A1)
+      if (size !== 'A4' && selectedShop.pricing.otherSizes && selectedShop.pricing.otherSizes[size]) {
+         const sizePricing = selectedShop.pricing.otherSizes[size];
+         rate = isColor ? sizePricing.color : sizePricing.bw;
+         
+         // If double sided is selected for large format, maybe 2x the price? 
+         // Since we only have one price in schema, let's assume it is per side.
+         if (isDouble) rate = rate * 2; 
 
-          if (selectedShop.pricing.pptPricing && selectedShop.pricing.pptPricing[key]) {
-             rate = selectedShop.pricing.pptPricing[key];
-          } else {
-             // Fallback if price not set: Use standard single side rate (Color or BW)
-             // Usually PPTs are colored, but let's respect color config if user chose B&W?
-             // Actually PPT pricing usually covers color/layout together.
-             // But if user forces B&W, maybe we should respect B&W rate?
-             // Let's assume PPT Pricing overrides everything as it is "layout based".
-             // Or we can check isColor.
-             // For now, let's use the PPT Pricing as "Base Rate per Sheet".
-             rate = isColor ? (selectedShop.pricing.color.single) : (selectedShop.pricing.bw.single);
-          }
       } else {
-          // Standard PDF/DOC Logic
-          totalSheets = item.pageCount * item.config.copies; // For double sided, sheets is /2 but price is usually 'double' rate * pages / 2 OR 'double' rate per sheet.
-          // In this system:
-          // Rate is defined as "Single Side Price" vs "Double Side Price".
-          // "Double Side Price" usually means "Price per Sheet (Front+Back)".
-          // Wait, typically Double Sided Price is slightly less than 2x Single.
-          // Logic used previously:
-          // rate = isDouble ? pricing.double : pricing.single;
-          // fileCost = rate * totalPages;
-          // If totalPages is 10. Double Sided -> 5 sheets.
-          // If rate is "Price Per Page" (e.g. 1rs), then 10 * 1 = 10.
-          // If rate is "Price Per Sheet" (e.g. 1.5rs), then 5 * 1.5 = 7.5.
-          // The previous code did: `const totalSheets = effectivePages * item.config.copies;` (where effectivePages = pageCount).
-          // `return total + (rate * totalSheets);`
-          // So `rate` is treated as "Price per logical page".
-          
-          // Let's stick to previous logic for PDF/DOC, just fixing PPT.
-          
+          // Standard A4 Logic (with Bulk Discounts)
           const bulk = selectedShop.pricing.bulkDiscount;
           if (bulk && bulk.enabled && totalSheets >= bulk.threshold) {
              rate = isColor ? bulk.colorPrice : bulk.bwPrice;
@@ -604,7 +579,7 @@ const UserDashboard = () => {
                     <div className="min-w-0">
                       <h4 className="font-bold text-slate-800 dark:text-white text-sm sm:text-lg truncate">{item.originalName}</h4>
                       <div className="flex items-center gap-1 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                        <span>{item.fileType === 'pptx' ? 'Slides' : 'Pages'}:</span>
+                        <span>Pages:</span>
                         <input
                           type="number"
                           readOnly
@@ -632,7 +607,7 @@ const UserDashboard = () => {
                 </div>
 
                 {/* Configuration Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
                   <div>
                     <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Color</label>
                     <select
@@ -657,33 +632,42 @@ const UserDashboard = () => {
                     </select>
                   </div>
 
-                  {item.fileType === 'pptx' ? (
-                     <div>
-                       <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Slides/Page</label>
-                       <select
-                         className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                         value={item.config.slidesPerPage}
-                         onChange={(e) => updateConfig(idx, 'slidesPerPage', parseInt(e.target.value))}
-                       >
-                         <option value={1}>1 Slide</option>
-                         <option value={2}>2 Slides</option>
-                         <option value={4}>4 Slides</option>
-                         <option value={6}>6 Slides</option>
-                         <option value={9}>9 Slides</option>
-                       </select>
-                     </div>
-                  ) : (
-                    <div>
-                      <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Pages</label>
-                      <input
-                        type="text"
-                        className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                        placeholder="All"
-                        value={item.config.pageRange}
-                        onChange={(e) => updateConfig(idx, 'pageRange', e.target.value)}
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Orientation</label>
+                    <select
+                      className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                      value={item.config.orientation}
+                      onChange={(e) => updateConfig(idx, 'orientation', e.target.value)}
+                    >
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Size</label>
+                    <select
+                      className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                      value={item.config.paperSize}
+                      onChange={(e) => updateConfig(idx, 'paperSize', e.target.value)}
+                    >
+                      <option value="A4">A4</option>
+                      <option value="A3">A3</option>
+                      <option value="A2">A2</option>
+                      <option value="A1">A1</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Page Range</label>
+                    <input
+                      type="text"
+                      className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                      placeholder="All"
+                      value={item.config.pageRange}
+                      onChange={(e) => updateConfig(idx, 'pageRange', e.target.value)}
+                    />
+                  </div>
 
                   <div>
                     <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Copies</label>
@@ -721,7 +705,7 @@ const UserDashboard = () => {
                   <div className="w-2/3">
                     <p className="font-medium text-slate-800 dark:text-white truncate">{item.originalName}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {item.config.color === 'color' ? 'Color' : 'B&W'} • {item.config.pageRange} • {item.config.copies}x
+                      {item.config.color === 'color' ? 'Color' : 'B&W'} • {item.config.paperSize} • {item.config.orientation} • {item.config.copies}x
                     </p>
                   </div>
                   <span className="font-bold text-slate-700 dark:text-slate-200">
@@ -782,7 +766,7 @@ const UserDashboard = () => {
                   <div className="min-w-0 flex-1 mr-3">
                     <p className="font-medium text-slate-800 dark:text-white truncate">{item.originalName}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {item.config.color === 'color' ? 'Color' : 'B&W'} • {item.config.pageRange} • {item.config.copies}x copy
+                      {item.config.color === 'color' ? 'Color' : 'B&W'} • {item.config.paperSize} • {item.config.orientation} • {item.config.copies}x copy
                     </p>
                   </div>
                   <span className="font-bold text-slate-700 dark:text-slate-200 shrink-0">

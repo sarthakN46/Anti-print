@@ -48,43 +48,38 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
     for (const item of items) {
        const isColor = item.config.color === 'color';
        const isDouble = item.config.side === 'double';
+       const size = item.config.paperSize || 'A4'; // Default to A4
+       
        let fileCost = 0;
+       
+       // Calculate Total Sheets (Logical Pages)
+       const totalSheets = item.pageCount * item.config.copies;
 
-       if (item.fileType === 'pptx' && item.config.slidesPerPage) {
-           // PPT Pricing Logic
-           const slidesPerPage = item.config.slidesPerPage;
-           const effectivePages = Math.ceil(item.pageCount / slidesPerPage);
-           const totalSheets = effectivePages * item.config.copies;
+       let rate = 0;
 
-           const keyMap: {[key: number]: string} = { 1: 'single', 2: 'two', 4: 'four', 6: 'six', 9: 'nine' };
-           const key = keyMap[slidesPerPage];
+       // Handle Large Formats (A3, A2, A1)
+       if (size !== 'A4' && shop.pricing.otherSizes && (shop.pricing.otherSizes as any)[size]) {
+           const sizePricing = (shop.pricing.otherSizes as any)[size];
+           rate = isColor ? sizePricing.color : sizePricing.bw;
            
-           let rate = 0;
-           if (shop.pricing.pptPricing && (shop.pricing.pptPricing as any)[key]) {
-                rate = (shop.pricing.pptPricing as any)[key];
-           } else {
-                // Fallback: Use standard single side rate
-                rate = isColor ? shop.pricing.color.single : shop.pricing.bw.single;
-           }
-           fileCost = rate * totalSheets;
+           // Match frontend logic: Double sided large format = 2x rate (per page)
+           if (isDouble) rate = rate * 2;
 
        } else {
-           // Standard Logic (PDF, DOCX)
-           const totalPages = item.pageCount * item.config.copies;
-           let ratePerPage = 0;
+           // Standard A4 Logic
            const bulk = shop.pricing.bulkDiscount;
-           if (bulk && bulk.enabled && totalPages >= bulk.threshold) {
-             ratePerPage = isColor ? bulk.colorPrice : bulk.bwPrice;
+           if (bulk && bulk.enabled && totalSheets >= bulk.threshold) {
+             rate = isColor ? bulk.colorPrice : bulk.bwPrice;
            } else {
              if (isColor) {
-                ratePerPage = isDouble ? shop.pricing.color.double : shop.pricing.color.single;
+                rate = isDouble ? shop.pricing.color.double : shop.pricing.color.single;
              } else {
-                ratePerPage = isDouble ? shop.pricing.bw.double : shop.pricing.bw.single;
+                rate = isDouble ? shop.pricing.bw.double : shop.pricing.bw.single;
              }
            }
-           fileCost = ratePerPage * totalPages;
        }
        
+       fileCost = rate * totalSheets;
        grandTotal += fileCost;
 
        // Move File in MinIO
