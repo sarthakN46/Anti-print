@@ -30,7 +30,7 @@ export interface IOrder extends Document {
   paymentId?: string; // Razorpay ID
   
   // Workflow Status
-  orderStatus: 'QUEUED' | 'PRINTING' | 'READY' | 'COMPLETED' | 'CANCELLED';
+  orderStatus: 'QUEUED' | 'PROCESSING' | 'PRINTING' | 'READY' | 'COMPLETED' | 'CANCELLED';
   
   // Security
   pickupCode: string; // A 4-digit code the user shows to collect
@@ -69,7 +69,7 @@ const OrderSchema = new Schema<IOrder>({
 
   orderStatus: { 
     type: String, 
-    enum: ['QUEUED', 'PRINTING', 'READY', 'COMPLETED', 'CANCELLED'], 
+    enum: ['QUEUED', 'PROCESSING', 'PRINTING', 'READY', 'COMPLETED', 'CANCELLED'], 
     default: 'QUEUED' 
   },
   

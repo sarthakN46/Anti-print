@@ -89,17 +89,42 @@ export const processOrderFiles = async (orderId: string) => {
             }
         }
 
-        if (updated) {
-            await order.save();
-            console.log(`[ConversionService] Completed for Order ${orderId}`);
-            // Notify Shop (and potentially User)
-            try {
-               const io = getIO();
-               io.to(order.shop.toString()).emit('order_updated', order);
-               io.to(order.user.toString()).emit('order_updated', order); // Notify User
-            } catch (e) {
-               console.error('[ConversionService] Failed to emit socket event', e);
+        // Processing Complete: Move to QUEUED and Notify
+        order.orderStatus = 'QUEUED';
+        await order.save();
+        
+        // Populate User details so Frontend can display them
+        await order.populate('user', 'name email');
+        
+        console.log(`[ConversionService] Completed for Order ${orderId}. Status: QUEUED`);
+
+        try {
+            const io = getIO();
+            
+            // Safe ID Extraction Helper
+            const getStrId = (val: any) => {
+               if (!val) return null;
+               if (typeof val === 'string') return val;
+               if (val._id) return val._id.toString(); // Populated object
+               return val.toString(); // ObjectId
+            };
+
+            const shopId = getStrId(order.shop);
+            const userId = getStrId(order.user);
+
+            if (shopId) {
+               console.log(`[ConversionService] Emitting new_order to Shop Room: ${shopId}`);
+               io.to(shopId).emit('new_order', order);
             }
+            
+            if (userId) {
+               console.log(`[ConversionService] Emitting order_status_updated to User Room: ${userId}`);
+               io.to(userId).emit('order_status_updated', order);
+               io.to(userId).emit('order_updated', order); 
+            }
+
+        } catch (e) {
+            console.error('[ConversionService] Failed to emit socket event', e);
         }
 
     } catch (err) {

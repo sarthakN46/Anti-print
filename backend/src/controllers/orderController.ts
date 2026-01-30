@@ -174,18 +174,21 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
     // Update Order
     order.paymentStatus = 'PAID';
     order.paymentId = paymentId || `pay_mock_${Date.now()}`;
+    order.orderStatus = 'PROCESSING'; // Set to PROCESSING while converting
     await order.save();
 
     // Populate User for Socket Emission
     await order.populate('user', 'name email');
 
-    // Emit Socket Event (Only after payment success)
+    // Emit Socket Event (Only to User, Shop will be notified after conversion)
     try {
       const io = getIO();
-      // Notify Shop
-      io.to(order.shop.toString()).emit('new_order', order);
-      // Notify User (ensure they see the status change immediately if listening)
-      io.to(order.user._id.toString()).emit('order_status_updated', order);
+      // Safe ID Extraction
+      const userId = order.user && (order.user as any)._id ? (order.user as any)._id.toString() : order.user?.toString();
+      
+      if (userId) {
+         io.to(userId).emit('order_status_updated', order);
+      }
     } catch (e) {
       console.error('Socket emission failed', e);
     }
@@ -245,8 +248,11 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
     // Emit Socket Event to User & Shop
     try {
        const io = getIO();
-       io.to(order.shop.toString()).emit('order_status_updated', order);
-       io.to(order.user.toString()).emit('order_status_updated', order);
+       const shopId = order.shop.toString();
+       const userId = order.user.toString(); 
+       
+       io.to(shopId).emit('order_status_updated', order);
+       io.to(userId).emit('order_status_updated', order);
     } catch (e) {
        console.error('Socket emission failed', e);
     }
@@ -308,8 +314,11 @@ export const cancelOrder = async (req: AuthRequest, res: Response): Promise<void
     // Emit Socket Event
     try {
       const io = getIO();
-      io.to(order.shop.toString()).emit('order_status_updated', order);
-      io.to(order.user._id.toString()).emit('order_status_updated', order);
+      const shopId = order.shop.toString();
+      const userId = order.user && (order.user as any)._id ? (order.user as any)._id.toString() : order.user?.toString();
+
+      io.to(shopId).emit('order_status_updated', order);
+      if (userId) io.to(userId).emit('order_status_updated', order);
     } catch (e) {
       console.error('Socket emission failed', e);
     }
