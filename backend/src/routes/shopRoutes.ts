@@ -3,7 +3,7 @@ import {
   createShop, 
   getMyShop, 
   getAllShops, 
-  getShopById, // <--- Import
+  getShopById, 
   updateShop, 
   updatePricing,
   toggleShopStatus,
@@ -24,25 +24,18 @@ router.use(protect);
 router.post('/', authorize('OWNER'), createShop);
 
 // Get My Shop Details
-// This route is specific, so it should take precedence if defined before a generic /:id route IF both were in same scope.
-// But since /:id is public, we define it *above* protect? 
-// Actually, let's keep /:id public but ensure we don't break /my-shop. 
-// /my-shop is protected. 
-// If we define router.get('/:id', getShopById) at the top, GET /my-shop will match it.
-// We should define /:id at the END, but since it needs to be Public, we can't put it after router.use(protect).
-// Solution: Use a regex or verify ID format in controller. 
-// OR: Just define it here, and in controller check if ID is valid ObjectId. 
-// "my-shop" is not a valid ObjectId, so mongoose will throw CastError.
+router.get('/my-shop', authorize('OWNER', 'EMPLOYEE'), getMyShop);
 
-// Let's rely on placement. We move `getMyShop` UP to be before `router.use(protect)`? No, it needs protection.
-// We can define the public generic route at the end? No, then it would require auth.
+// Toggle Shop Status (Open/Closed)
+router.put('/status', authorize('OWNER', 'EMPLOYEE'), toggleShopStatus);
 
-// Correct approach for mixed public/protected with path params:
-// 1. Specific Public Routes
-// 2. Specific Protected Routes (wrapper)
-// 3. Generic Public Routes
+// Add Employee
+router.post('/employees', authorize('OWNER'), addEmployee);
 
-// But `protect` middleware is applied via `router.use`.
-// So we must define public routes BEFORE `router.use(protect)`.
+// Update Pricing
+router.put('/pricing', authorize('OWNER'), updatePricing);
 
-// Let's modify the structure slightly.
+// Update General Shop Info
+router.put('/:id', authorize('OWNER'), updateShop);
+
+export default router;
