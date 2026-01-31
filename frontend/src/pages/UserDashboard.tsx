@@ -166,11 +166,16 @@ const UserDashboard = () => {
   const calculateTotal = () => {
     if (!selectedShop) return 0;
     return cart.reduce((total, item) => {
-      const rate = item.config.color === 'bw' 
-        ? selectedShop.pricing.bw.single 
-        : selectedShop.pricing.color.single;
-      // Simple logic: rate * pages * copies. 
-      // (Advanced logic for double-sided could be added here)
+      // Determine base rate object (BW vs Color)
+      const rateObj = item.config.color === 'bw' 
+        ? selectedShop.pricing.bw 
+        : selectedShop.pricing.color;
+      
+      // Determine specific rate (Single vs Double)
+      // If 1 page, always force single rate even if double selected (safety)
+      const isDouble = item.config.side === 'double' && item.pageCount > 1;
+      const rate = isDouble ? rateObj.double : rateObj.single;
+
       return total + (rate * item.pageCount * item.config.copies);
     }, 0);
   };
@@ -198,9 +203,12 @@ const UserDashboard = () => {
               toast.loading("Fetching shop details...");
               const { data: shop } = await api.get(`/shops/qr/${shopId}`);
               
+              console.log("[QR Scan] Fetched Shop:", shop); // Debug
+
               toast.dismiss();
               if (shop) {
-                 if (shop.status === 'CLOSED') {
+                 const status = shop.status?.toUpperCase();
+                 if (status === 'CLOSED') {
                     toast.error(`Shop '${shop.name}' is currently CLOSED.`);
                     setShowScanner(false);
                     return;
@@ -703,12 +711,13 @@ const UserDashboard = () => {
                   <div>
                     <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Sides</label>
                     <select
-                      className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                      className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white disabled:opacity-50"
                       value={item.config.side}
                       onChange={(e) => updateConfig(idx, 'side', e.target.value)}
+                      disabled={item.pageCount < 2} 
                     >
                       <option value="single">Single</option>
-                      <option value="double">Double</option>
+                      {item.pageCount >= 2 && <option value="double">Double</option>}
                     </select>
                   </div>
 

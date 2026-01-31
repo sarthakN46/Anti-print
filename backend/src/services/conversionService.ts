@@ -9,17 +9,26 @@ import { getIO } from '../utils/socket';
 
 const runConverter = (inputPath: string, outputPath: string): Promise<void> => {
    return new Promise((resolve, reject) => {
-      const scriptPath = path.join(__dirname, '../scripts/convert.py');
-      // Python script is optimized to use existing instances via COM
-      const process = spawn('python3', [scriptPath, inputPath, outputPath]);
+      // Use process.cwd() for reliable path resolution in Render/Docker
+      const scriptPath = path.join(process.cwd(), 'dist/scripts/convert.py');
+      console.log(`[Converter] Script: ${scriptPath}`);
+      console.log(`[Converter] Input: ${inputPath}`);
       
-      process.on('close', (code) => {
-         if (code === 0) resolve();
-         else reject(new Error(`Converter exited with code ${code}`));
+      const pyProcess = spawn('python3', [scriptPath, inputPath, outputPath]);
+      
+      let stderr = '';
+      
+      pyProcess.stdout.on('data', (d) => console.log(`[Converter stdout]: ${d}`));
+      pyProcess.stderr.on('data', (d) => {
+         console.error(`[Converter stderr]: ${d}`);
+         stderr += d.toString();
       });
-      
-      // Optional: log stderr if needed
-      // process.stderr.on('data', (d) => console.error(d.toString()));
+
+      pyProcess.on('close', (code) => {
+         console.log(`[Converter] Exited with code ${code}`);
+         if (code === 0) resolve();
+         else reject(new Error(`Converter exited with code ${code}. Error: ${stderr}`));
+      });
    });
 };
 
