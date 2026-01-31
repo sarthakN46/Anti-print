@@ -17,19 +17,19 @@ const runAnalyzer = (filePath: string): Promise<{ pageCount: number, type: strin
    return new Promise((resolve, reject) => {
       // Use process.cwd() for reliable path resolution in Render/Docker
       const scriptPath = path.join(process.cwd(), 'dist/scripts/analyze.py');
-      const process = spawn('python3', [scriptPath, filePath]);
+      const pyProcess = spawn('python3', [scriptPath, filePath]);
       
       let dataString = '';
       
-      process.stdout.on('data', (data) => {
+      pyProcess.stdout.on('data', (data) => {
          dataString += data.toString();
       });
 
-      process.stderr.on('data', (data) => {
+      pyProcess.stderr.on('data', (data) => {
          console.error(`[Analyzer Error]: ${data}`);
       });
 
-      process.on('close', (code) => {
+      pyProcess.on('close', (code) => {
          if (code !== 0) {
             console.error(`Analyzer exited with code ${code}`);
             resolve({ pageCount: 1, type: 'unknown' }); // Fallback
@@ -126,9 +126,9 @@ export const uploadFile = async (req: MulterRequest, res: Response): Promise<voi
 const runConverter = (inputPath: string, outputPath: string): Promise<void> => {
    return new Promise((resolve, reject) => {
       const scriptPath = path.join(__dirname, '../scripts/convert.py');
-      const process = spawn('python3', [scriptPath, inputPath, outputPath]);
+      const pyProcess = spawn('python3', [scriptPath, inputPath, outputPath]);
       
-      process.on('close', (code) => {
+      pyProcess.on('close', (code) => {
          if (code === 0) resolve();
          else reject(new Error(`Converter exited with code ${code}`));
       });
