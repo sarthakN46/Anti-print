@@ -234,7 +234,7 @@ const ShopDashboard = () => {
 
   const openPreview = async (storageKey: string, _originalName: string, autoPrint = false) => {
      try {
-       toast.loading('Preparing document...', { id: 'preview-loader' });
+       toast.loading('Loading document...', { id: 'preview-loader' });
        
        // Call the NEW conversion endpoint
        const response = await api.post('/upload/preview-pdf', { storageKey }, {
