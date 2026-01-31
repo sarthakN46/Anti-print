@@ -135,16 +135,14 @@ const UserDashboard = () => {
     setCart([]);
   };
 
-  const handleUploadComplete = (fileData: any) => {
-    setCart(prev => [
-      ...prev,
-      {
-        storageKey: fileData.key,
+  const handleUploadComplete = (files: any[]) => {
+    const newItems = files.map(fileData => ({
+        storageKey: fileData.storageKey,
         originalName: fileData.originalName,
         fileHash: fileData.fileHash,
-        pageCount: fileData.pageCount || 1, // Default to 1 if detection fails
+        pageCount: fileData.pageCount || 1,
         previewUrl: fileData.previewUrl,
-        fileType: fileData.mimetype,
+        fileType: fileData.mimeType,
         config: {
           color: 'bw',
           side: 'single',
@@ -153,9 +151,10 @@ const UserDashboard = () => {
           orientation: 'portrait',
           paperSize: 'A4'
         }
-      }
-    ]);
-    toast.success('File added to cart');
+    }));
+    
+    setCart(prev => [...prev, ...newItems]);
+    toast.success(`${files.length} file(s) added to cart`);
   };
 
   const updateConfig = (index: number, key: string, value: any) => {
@@ -752,7 +751,14 @@ const UserDashboard = () => {
                       min="1"
                       className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                       value={item.config.copies}
-                      onChange={(e) => updateConfig(idx, 'copies', parseInt(e.target.value) || 1)}
+                      onChange={(e) => {
+                         const val = parseInt(e.target.value);
+                         if (isNaN(val)) updateConfig(idx, 'copies', 0);
+                         else updateConfig(idx, 'copies', val);
+                      }}
+                      onBlur={() => {
+                         if (!item.config.copies || item.config.copies < 1) updateConfig(idx, 'copies', 1);
+                      }}
                     />
                   </div>
                 </div>
