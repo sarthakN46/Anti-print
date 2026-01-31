@@ -14,4 +14,5 @@ npm run build
 echo "Copying Python Scripts..."
 mkdir -p dist/scripts
 cp -r src/scripts/* dist/scripts/
+chmod +x dist/scripts/*.py # Ensure executable
 ls -R dist/scripts  # Debug: Check if files exist
