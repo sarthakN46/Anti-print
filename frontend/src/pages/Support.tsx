@@ -1,4 +1,4 @@
-import { Phone, Mail, MessageCircle, MapPin, ArrowLeft } from 'lucide-react';
+import { Phone, Mail, MapPin, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const Support = () => {
