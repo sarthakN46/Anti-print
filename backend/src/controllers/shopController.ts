@@ -170,6 +170,36 @@ export const updateShop = async (req: AuthRequest, res: Response): Promise<void>
   }
 };
 
+// @desc    Get Shop By ID (Public - For QR Scan / Deep Link)
+// @route   GET /api/shops/:id
+// @access  Public
+export const getShopById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const shop = await Shop.findById(req.params.id);
+    if (!shop) {
+      res.status(404).json({ message: 'Shop not found' });
+      return;
+    }
+
+    // Sign image if private
+    let shopData = shop.toObject();
+    if (shopData.image && !shopData.image.startsWith('http')) {
+       try {
+          const url = await s3.getSignedUrlPromise('getObject', {
+             Bucket: BUCKET_NAME,
+             Key: shopData.image,
+             Expires: 3600
+          });
+          shopData.image = url;
+       } catch (e) { }
+    }
+
+    res.json(shopData);
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
 // @desc    Toggle Shop Status (Open/Closed)
 // @route   PUT /api/shops/status
 // @access  Private (Owner or Employee)

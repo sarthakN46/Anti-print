@@ -13,65 +13,51 @@ def analyze_file(file_path):
         page_count = 1
         file_type = 'unknown'
 
+        # --- PDF ---
         if ext == '.pdf':
             file_type = 'pdf'
             from pypdf import PdfReader
             reader = PdfReader(file_path)
             page_count = len(reader.pages)
         
-        elif ext in ['.docx', '.doc']:
+        # --- DOCX ---
+        elif ext == '.docx':
             file_type = 'docx'
             try:
-                # Primary Method: Use COM automation with Word (Accurate & supports .doc)
-                import comtypes.client
-                
-                word_app = None
-                is_new_instance = False
-                
-                try:
-                    word_app = comtypes.client.GetActiveObject("Word.Application")
-                    is_new_instance = False
-                except:
-                    word_app = comtypes.client.CreateObject("Word.Application")
-                    is_new_instance = True
-                    word_app.Visible = False
-                    word_app.DisplayAlerts = 0
-                
-                try:
-                    # Open file (ReadOnly, not visible)
-                    doc = word_app.Documents.Open(file_path, ReadOnly=True, Visible=False)
-                    # wdStatisticPages = 2
-                    page_count = doc.ComputeStatistics(2)
-                    doc.Close(SaveChanges=False)
-                finally:
-                    if is_new_instance and word_app:
-                        word_app.Quit()
-
+                from docx import Document
+                doc = Document(file_path)
+                # doc.core_properties.page_count is often None/0 if not saved by Word
+                # We can try to approximate or just return 1 if metadata is missing.
+                # Accurate page count without Word is HARD.
+                # For now, let's trust metadata or default to user input.
+                if doc.core_properties.page_count:
+                     page_count = doc.core_properties.page_count
+                else:
+                     # Approximation: 1 page per 3000 chars? Very rough.
+                     # Let's keep it safe: 
+                     page_count = 1 
             except Exception as e:
-                # Fallback method if Word automation fails
-                # sys.stderr.write(f"COM Warning: {str(e)}\n") # Optional: log warning
-                
-                try:
-                    if ext == '.doc':
-                        # No pure python lib for .doc, fallback to 1
-                        page_count = 1
-                    else:
-                        # Fallback for .docx using metadata
-                        from docx import Document
-                        doc = Document(file_path)
-                        if doc.core_properties.page_count:
-                            page_count = doc.core_properties.page_count
-                        else:
-                            page_count = 1
-                except:
-                    page_count = 1 
-        
+                # sys.stderr.write(f"Docx Error: {e}\n")
+                page_count = 1
+
+        # --- DOC (Binary) ---
+        elif ext == '.doc':
+             # Binary .doc is hard on Linux without LibreOffice.
+             # Return 1 and let user edit.
+             file_type = 'doc'
+             page_count = 1
+
+        # --- PPTX ---
         elif ext in ['.pptx', '.ppt']:
             file_type = 'pptx'
-            from pptx import Presentation
-            prs = Presentation(file_path)
-            page_count = len(prs.slides)
+            try:
+                from pptx import Presentation
+                prs = Presentation(file_path)
+                page_count = len(prs.slides)
+            except:
+                page_count = 1
             
+        # --- IMAGES ---
         elif ext in ['.png', '.jpg', '.jpeg']:
             file_type = 'image'
             page_count = 1
@@ -79,11 +65,9 @@ def analyze_file(file_path):
         print(json.dumps({"pageCount": page_count, "type": file_type}))
 
     except Exception as e:
-        # Print error to stderr so Node.js can log it
         sys.stderr.write(f"Error analyzing file: {str(e)}\n")
         sys.stderr.write(traceback.format_exc())
-        # Return default JSON to stdout to avoid Node.js JSON parse error if possible, 
-        # but exit code 1 will trigger fallback in Node.js anyway.
+        # Return fallback
         print(json.dumps({"pageCount": 1, "type": "unknown", "error": str(e)}))
         sys.exit(1)
 
