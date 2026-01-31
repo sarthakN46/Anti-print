@@ -196,6 +196,11 @@ const UserDashboard = () => {
               
               toast.dismiss();
               if (shop) {
+                 if (shop.status === 'CLOSED') {
+                    toast.error(`Shop '${shop.name}' is currently CLOSED.`);
+                    setShowScanner(false);
+                    return;
+                 }
                  handleSelectShop(shop);
                  setShowScanner(false);
                  toast.success(`Joined ${shop.name}`);
