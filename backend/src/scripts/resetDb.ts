@@ -87,6 +87,7 @@ const resetDb = async () => {
     console.error('\n❌ Error resetting system:', error);
     process.exit(1);
   }
+  }); // End rl.question
 };
 
 resetDb();
