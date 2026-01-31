@@ -22,6 +22,19 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       res.status(400).json({ message: 'Please fill all fields' });
       return;
     }
+    
+    // Email Regex
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+       res.status(400).json({ message: 'Invalid email format' });
+       return;
+    }
+
+    // Password Strength
+    if (password.length < 6) {
+       res.status(400).json({ message: 'Password must be at least 6 characters long' });
+       return;
+    }
 
     // 2. Check if user exists
     const userExists = await User.findOne({ email });
@@ -72,6 +85,19 @@ export const registerShopOwner = async (req: Request, res: Response): Promise<vo
     if (!name || !email || !password) {
       res.status(400).json({ message: 'Please fill all fields' });
       return;
+    }
+
+    // Email Regex
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+       res.status(400).json({ message: 'Invalid email format' });
+       return;
+    }
+
+    // Password Strength
+    if (password.length < 6) {
+       res.status(400).json({ message: 'Password must be at least 6 characters long' });
+       return;
     }
 
     // 2. Check if user exists
