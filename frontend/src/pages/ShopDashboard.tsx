@@ -249,8 +249,34 @@ const ShopDashboard = () => {
        const type = response.headers['content-type'];
        if (type.startsWith('image/')) {
           setPreviewType('img');
+       } else if (type === 'application/pdf') {
+          setPreviewType('pdf');
+       } else if (
+          type.includes('word') || 
+          type.includes('office') || 
+          type.includes('presentation') || 
+          storageKey.endsWith('.docx') || 
+          storageKey.endsWith('.pptx')
+       ) {
+          // If backend returned original file (conversion failed/skipped), use Google Viewer
+          setPreviewType('office');
+          // For Google Viewer, we need a public URL. 
+          // Our previewUrl is a BLOB URL (local). Google Viewer CANNOT read Blob URLs.
+          // FIX: We need a signed URL from the backend, NOT the file content.
+          // BUT: The backend endpoint /preview-pdf returns the FILE CONTENT.
+          
+          // Workaround: If we can't convert, we must ask backend for a Signed URL.
+          // Since we are inside the blob logic, we are stuck.
+          
+          // BETTER FIX: If backend conversion fails, backend should probably return 400 or a specific flag?
+          // Currently backend returns the original body if conversion fails?
+          // "res.send(s3Obj.Body)"
+          
+          // If we receive a DOCX blob, we can't preview it easily.
+          // We should just Download it.
+          setPreviewType('unknown'); // Fallback to download
        } else {
-          setPreviewType('pdf'); // Everything else is PDF now
+          setPreviewType('pdf'); 
        }
        
        toast.dismiss('preview-loader');
