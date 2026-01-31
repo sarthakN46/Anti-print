@@ -4,7 +4,7 @@ import { AuthContext } from '../context/AuthContext';
 import FileUpload from '../components/FileUpload';
 import QRScanner from '../components/QRScanner';
 import toast from 'react-hot-toast';
-import { Store, ShoppingCart, LogOut, FileText, Trash2, Eye, MapPin, ArrowRight, Loader2, Info, QrCode, X, ArrowLeft, Clock, List, Map as MapIcon, CheckCircle, Phone, Mail, HelpCircle } from 'lucide-react';
+import { Store, ShoppingCart, LogOut, FileText, Trash2, Eye, MapPin, ArrowRight, Loader2, Info, QrCode, X, ArrowLeft, Clock, List, Map as MapIcon, CheckCircle, HelpCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
