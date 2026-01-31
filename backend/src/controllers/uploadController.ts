@@ -17,6 +17,19 @@ const runAnalyzer = (filePath: string): Promise<{ pageCount: number, type: strin
    return new Promise((resolve, reject) => {
       // Use process.cwd() for reliable path resolution in Render/Docker
       const scriptPath = path.join(process.cwd(), 'dist/scripts/analyze.py');
+      
+      // DEBUG: Log paths
+      console.log('--- DEBUG PATHS ---');
+      console.log('CWD:', process.cwd());
+      console.log('Script Path:', scriptPath);
+      try {
+         console.log('Contents of dist:', fs.readdirSync(path.join(process.cwd(), 'dist')));
+         console.log('Contents of dist/scripts:', fs.readdirSync(path.join(process.cwd(), 'dist/scripts')));
+      } catch (e) {
+         console.log('Error reading dirs:', e);
+      }
+      // -----------------
+
       const pyProcess = spawn('python3', [scriptPath, filePath]);
       
       let dataString = '';
