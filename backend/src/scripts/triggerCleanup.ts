@@ -85,6 +85,7 @@ const manualCleanup = async () => {
   } catch (error) {
     console.error('❌ Cleanup failed:', error);
   }
+  }); // End rl.question
 };
 
 manualCleanup();
