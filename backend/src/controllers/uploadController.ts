@@ -16,7 +16,7 @@ interface MulterRequest extends Request {
 const runAnalyzer = (filePath: string): Promise<{ pageCount: number, type: string }> => {
    return new Promise((resolve, reject) => {
       const scriptPath = path.join(__dirname, '../scripts/analyze.py');
-      const process = spawn('python', [scriptPath, filePath]);
+      const process = spawn('python3', [scriptPath, filePath]);
       
       let dataString = '';
       
@@ -125,7 +125,7 @@ export const uploadFile = async (req: MulterRequest, res: Response): Promise<voi
 const runConverter = (inputPath: string, outputPath: string): Promise<void> => {
    return new Promise((resolve, reject) => {
       const scriptPath = path.join(__dirname, '../scripts/convert.py');
-      const process = spawn('python', [scriptPath, inputPath, outputPath]);
+      const process = spawn('python3', [scriptPath, inputPath, outputPath]);
       
       process.on('close', (code) => {
          if (code === 0) resolve();

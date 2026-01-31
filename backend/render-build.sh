@@ -10,3 +10,6 @@ pip3 install -r requirements.txt
 
 echo "Building Project..."
 npm run build
+
+echo "Copying Python Scripts..."
+cp -r src/scripts dist/scripts

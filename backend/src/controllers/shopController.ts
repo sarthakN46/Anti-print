@@ -95,7 +95,32 @@ export const getMyShop = async (req: AuthRequest, res: Response): Promise<void> 
 // @access  Public
 export const getAllShops = async (req: Request, res: Response): Promise<void> => {
   try {
-    const shops = await Shop.find({ status: { $ne: 'CLOSED' } }).lean();
+    const { lat, lng } = req.query;
+    
+    let query: any = { status: { $ne: 'CLOSED' } };
+    let shops;
+
+    // If coordinates provided, sort by distance
+    if (lat && lng) {
+       // Note: This requires a 2dsphere index on 'location' in MongoDB
+       // If index missing, we can manually sort (slower but safer for now)
+       shops = await Shop.find(query).lean();
+       
+       const userLat = parseFloat(lat as string);
+       const userLng = parseFloat(lng as string);
+
+       shops = shops.map((shop: any) => {
+          const [sLat, sLng] = shop.location?.coordinates || [0,0];
+          // Simple Haversine (or just Euclidean for sort)
+          const dist = Math.sqrt(Math.pow(sLat - userLat, 2) + Math.pow(sLng - userLng, 2));
+          return { ...shop, distance: dist }; // 'distance' here is abstract degree-diff
+       })
+       .sort((a: any, b: any) => a.distance - b.distance)
+       .slice(0, 30); // Limit to closest 30
+       
+    } else {
+       shops = await Shop.find(query).limit(30).lean();
+    }
     
     // Generate Presigned URLs for images
     const shopsWithImages = await Promise.all(shops.map(async (shop: any) => {
