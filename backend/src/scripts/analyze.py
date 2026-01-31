@@ -56,6 +56,11 @@ def analyze_file(file_path):
                 page_count = len(prs.slides)
             except:
                 page_count = 1
+        
+        # --- EXCEL / CSV ---
+        elif ext in ['.xlsx', '.xls', '.csv']:
+            file_type = 'excel'
+            page_count = 1
             
         # --- IMAGES ---
         elif ext in ['.png', '.jpg', '.jpeg']:

@@ -63,6 +63,9 @@ const FileUpload = ({ onUploadComplete, shopId }: FileUploadProps) => {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
       'application/vnd.ms-powerpoint', // .ppt
       'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+      'application/vnd.ms-excel', // .xls
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'text/csv', // .csv
       'image/png', 
       'image/jpeg'
     ];
@@ -129,7 +132,7 @@ const FileUpload = ({ onUploadComplete, shopId }: FileUploadProps) => {
           onChange={handleManualSelect}
           onClick={(e) => (e.currentTarget.value = '')} // RESET VALUE FIX
           disabled={uploading}
-          accept=".pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg" 
+          accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.png,.jpg,.jpeg" 
         />
         
         {uploading ? (
