@@ -1,24 +1,15 @@
 import sys
 import os
+import subprocess
 import traceback
-import comtypes.client
-
-def get_app_instance(app_name):
-    """
-    Try to get running instance, otherwise create new one.
-    Returns (app, is_new_instance)
-    """
-    try:
-        app = comtypes.client.GetActiveObject(app_name)
-        return app, False
-    except:
-        app = comtypes.client.CreateObject(app_name)
-        return app, True
+import platform
 
 def convert_to_pdf(input_path, output_path):
     input_path = os.path.abspath(input_path)
     output_path = os.path.abspath(output_path)
-    ext = os.path.splitext(input_path)[1].lower()
+    
+    # Check OS
+    is_windows = platform.system() == 'Windows'
 
     print(f"Converting {input_path} to {output_path}...")
 
@@ -26,63 +17,75 @@ def convert_to_pdf(input_path, output_path):
         if not os.path.exists(input_path):
             raise FileNotFoundError(f"Input file not found: {input_path}")
 
-        if ext in ['.docx', '.doc']:
-            word, is_new = get_app_instance("Word.Application")
-            if is_new:
-                word.Visible = False
-                word.DisplayAlerts = 0
-            
+        if is_windows:
+            # WINDOWS: Use COM (Keep your original logic for local dev if on Windows)
+            # But since we are deploying to Linux, we can skip or make it optional.
+            # To be safe and clean for Render, I will strictly use LibreOffice 
+            # OR allow comtypes ONLY if import succeeds.
             try:
-                doc = word.Documents.Open(input_path, ReadOnly=True, Visible=False)
-                doc.SaveAs(output_path, FileFormat=17) # 17 = wdFormatPDF
-                doc.Close(SaveChanges=False)
-            except Exception as e:
-                # If attachment fails, might be due to modal dialogs in existing app
-                raise e
-            finally:
-                if is_new:
-                    word.Quit()
-        
-        elif ext in ['.pptx', '.ppt']:
-            ppt, is_new = get_app_instance("Powerpoint.Application")
-            # PowerPoint often requires visibility for export, but minimized works.
-            # Or WithWindow=False in Open.
-            if is_new:
-                # Start minimized/hidden if possible
-                # ppt.Visible = 1 # Required for some operations? 
-                # Let's try minimizing
-                pass 
+                import comtypes.client
+                # ... (Original COM Logic could go here, but let's simplify)
+                # For now, let's assume if you are on Windows dev, you have LibreOffice OR 
+                # we just use the Linux logic which might fail on Windows if 'soffice' isn't in PATH.
+                pass
+            except ImportError:
+                pass
 
-            try:
-                # WithWindow=0 (False) to hide
-                presentation = ppt.Presentations.Open(input_path, ReadOnly=True, Untitled=False, WithWindow=0)
-                presentation.SaveAs(output_path, 32) # 32 = ppSaveAsPDF
-                presentation.Close()
-            except Exception as e:
-                raise e
-            finally:
-                if is_new:
-                    ppt.Quit()
-            
-        elif ext in ['.xlsx', '.xls']:
-            excel, is_new = get_app_instance("Excel.Application")
-            if is_new:
-                excel.Visible = False
-                excel.DisplayAlerts = False
-            
-            try:
-                wb = excel.Workbooks.Open(input_path)
-                wb.ExportAsFixedFormat(0, output_path) # 0 = xlTypePDF
-                wb.Close()
-            finally:
-                if is_new:
-                    excel.Quit()
-            
-        else:
-            raise ValueError(f"Unsupported format: {ext}")
+        # LINUX / UNIVERSAL: Use LibreOffice (Headless)
+        # Command: libreoffice --headless --convert-to pdf --outdir <dir> <file>
+        
+        out_dir = os.path.dirname(output_path)
+        
+        # Determine command based on OS/Environment
+        # On Linux/Docker, it's usually 'libreoffice' or 'soffice'
+        cmd = 'libreoffice'
+        
+        # Check if libreoffice exists
+        from shutil import which
+        if which('libreoffice') is None:
+             if which('soffice') is not None:
+                 cmd = 'soffice'
+             else:
+                 # Fallback for Windows if installed
+                 if is_windows:
+                     # Attempt standard install path? Or fail back to COM?
+                     # Let's fail loudly so we know we need Docker.
+                     raise EnvironmentError("LibreOffice not found in PATH. Please install it or use Docker.")
+                 else:
+                     raise EnvironmentError("LibreOffice not found. Ensure you are using the Docker environment.")
+
+        args = [
+            cmd,
+            '--headless',
+            '--convert-to',
+            'pdf',
+            '--outdir',
+            out_dir,
+            input_path
+        ]
+        
+        print(f"Running: {' '.join(args)}")
+        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        if result.returncode != 0:
+            raise Exception(f"LibreOffice exited with code {result.returncode}\nStderr: {result.stderr}")
+
+        # LibreOffice saves as <filename>.pdf in outdir. 
+        # We need to ensure it matches output_path.
+        # If input is 'file.docx', output is 'file.pdf'.
+        # If output_path is 'temp/123.pdf', it should match.
+        # We might need to rename if the generated name is different.
+        
+        base_name = os.path.splitext(os.path.basename(input_path))[0]
+        generated_file = os.path.join(out_dir, base_name + '.pdf')
+        
+        if generated_file != output_path and os.path.exists(generated_file):
+            if os.path.exists(output_path):
+                os.remove(output_path)
+            os.rename(generated_file, output_path)
 
         if not os.path.exists(output_path):
-            raise Exception("Output PDF was not created.")
+             raise Exception(f"Output PDF not found at {output_path} (Generated: {generated_file})")
 
         print("Success")
 
