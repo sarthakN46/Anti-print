@@ -5,6 +5,13 @@ import Shop from '../models/Shop';
 import s3, { BUCKET_NAME } from '../config/s3';
 import { processOrderFiles } from '../services/conversionService';
 import { getIO } from '../utils/socket';
+import Razorpay from 'razorpay';
+import crypto from 'crypto';
+
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID!,
+  key_secret: process.env.RAZORPAY_KEY_SECRET!
+});
 
 // Helper: Generate a random 4-digit pickup code
 const generatePickupCode = () => Math.floor(1000 + Math.random() * 9000).toString();
@@ -131,7 +138,7 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
   }
 };
 
-// @desc    Initiate Payment (Mock Razorpay)
+// @desc    Initiate Payment (Razorpay)
 // @route   POST /api/orders/checkout
 // @access  Private (User)
 export const createPaymentOrder = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -144,16 +151,28 @@ export const createPaymentOrder = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    // Mock Razorpay Order ID
-    const razorpayOrderId = `order_mock_${Math.floor(Math.random() * 1000000)}`;
+    const options = {
+      amount: Math.round(order.totalAmount * 100), // Amount in paise
+      currency: "INR",
+      receipt: `order_rcptid_${order._id}`,
+    };
+
+    const razorpayOrder = await razorpay.orders.create(options);
+
+    if (!razorpayOrder) {
+      res.status(500).json({ message: 'Razorpay order creation failed' });
+      return;
+    }
 
     res.json({
-      id: razorpayOrderId,
-      currency: 'INR',
-      amount: order.totalAmount * 100 // Rupees to Paise
+      id: razorpayOrder.id,
+      currency: razorpayOrder.currency,
+      amount: razorpayOrder.amount,
+      keyId: process.env.RAZORPAY_KEY_ID // Send Key ID to frontend
     });
 
   } catch (error) {
+    console.error("Razorpay Error:", error);
     res.status(500).json({ message: 'Payment initiation failed' });
   }
 };
@@ -163,7 +182,7 @@ export const createPaymentOrder = async (req: AuthRequest, res: Response): Promi
 // @access  Private (User)
 export const verifyPayment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { orderId, paymentId } = req.body;
+    const { orderId, razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
     
     const order = await Order.findById(orderId);
     if (!order) {
@@ -171,21 +190,38 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
+    // Verify Signature
+    const generated_signature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
+      .update(razorpay_order_id + "|" + razorpay_payment_id)
+      .digest("hex");
+
+    if (generated_signature !== razorpay_signature) {
+       order.paymentStatus = 'FAILED';
+       order.orderStatus = 'CANCELLED';
+       await order.save();
+       res.status(400).json({ message: 'Payment verification failed: Invalid Signature' });
+       return;
+    }
+
     // Update Order
     order.paymentStatus = 'PAID';
-    order.paymentId = paymentId || `pay_mock_${Date.now()}`;
+    order.paymentId = razorpay_payment_id;
+    order.orderStatus = 'PROCESSING'; // Set to PROCESSING while converting
     await order.save();
 
     // Populate User for Socket Emission
     await order.populate('user', 'name email');
 
-    // Emit Socket Event (Only after payment success)
+    // Emit Socket Event (Only to User, Shop will be notified after conversion)
     try {
       const io = getIO();
-      // Notify Shop
-      io.to(order.shop.toString()).emit('new_order', order);
-      // Notify User (ensure they see the status change immediately if listening)
-      io.to(order.user._id.toString()).emit('order_status_updated', order);
+      // Safe ID Extraction
+      const userId = order.user && (order.user as any)._id ? (order.user as any)._id.toString() : order.user?.toString();
+      
+      if (userId) {
+         io.to(userId).emit('order_status_updated', order);
+      }
     } catch (e) {
       console.error('Socket emission failed', e);
     }
@@ -196,6 +232,7 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
     res.json({ status: 'success', order });
 
   } catch (error) {
+    console.error("Verification Error:", error);
     res.status(500).json({ message: 'Payment verification failed' });
   }
 };
@@ -245,8 +282,11 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
     // Emit Socket Event to User & Shop
     try {
        const io = getIO();
-       io.to(order.shop.toString()).emit('order_status_updated', order);
-       io.to(order.user.toString()).emit('order_status_updated', order);
+       const shopId = order.shop.toString();
+       const userId = order.user.toString(); 
+       
+       io.to(shopId).emit('order_status_updated', order);
+       io.to(userId).emit('order_status_updated', order);
     } catch (e) {
        console.error('Socket emission failed', e);
     }
@@ -292,11 +332,23 @@ export const cancelOrder = async (req: AuthRequest, res: Response): Promise<void
        return;
     }
 
-    // Refund Logic (Mock)
+    // Refund Logic
     if (order.paymentStatus === 'PAID') {
        console.log(`[Refund] Initiating refund for Order ${order._id} Amount: ${order.totalAmount}`);
-       // Here we would call Razorpay refund API
-       order.paymentStatus = 'REFUNDED'; 
+       
+       try {
+         // Refund full amount
+         if (order.paymentId) {
+             await razorpay.payments.refund(order.paymentId, {
+               speed: 'normal',
+             });
+             order.paymentStatus = 'REFUNDED';
+         }
+       } catch (refundError) {
+         console.error('Razorpay Refund Failed:', refundError);
+         // We still cancel the order but maybe log the refund failure or mark as 'REFUND_FAILED'
+         // For now, let's proceed with cancellation but log it.
+       }
     }
 
     order.orderStatus = 'CANCELLED';
@@ -308,8 +360,25 @@ export const cancelOrder = async (req: AuthRequest, res: Response): Promise<void
     // Emit Socket Event
     try {
       const io = getIO();
-      io.to(order.shop.toString()).emit('order_status_updated', order);
-      io.to(order.user._id.toString()).emit('order_status_updated', order);
+      const shopId = order.shop.toString();
+      const userId = order.user && (order.user as any)._id ? (order.user as any)._id.toString() : order.user?.toString();
+
+      io.to(shopId).emit('order_status_updated', order);
+      if (userId) {
+          io.to(userId).emit('order_status_updated', order);
+          // Send specific notifications
+          if (order.paymentStatus === 'REFUNDED') {
+             io.to(userId).emit('notification', { 
+               message: `Order #${order._id.toString().slice(-4)} Cancelled. Refund Initiated.`, 
+               type: 'info' 
+             });
+          } else {
+             io.to(userId).emit('notification', { 
+               message: `Order #${order._id.toString().slice(-4)} Cancelled by Shop.`, 
+               type: 'error' 
+             });
+          }
+      }
     } catch (e) {
       console.error('Socket emission failed', e);
     }

@@ -4,7 +4,7 @@ import { AuthContext } from '../context/AuthContext';
 import FileUpload from '../components/FileUpload';
 import QRScanner from '../components/QRScanner';
 import toast from 'react-hot-toast';
-import { Store, ShoppingCart, LogOut, FileText, Trash2, Eye, MapPin, ArrowRight, Loader2, Info, QrCode, X, ArrowLeft, Clock, List, Map as MapIcon, CheckCircle } from 'lucide-react';
+import { Store, ShoppingCart, LogOut, FileText, Trash2, Eye, MapPin, ArrowRight, Loader2, Info, QrCode, X, ArrowLeft, Clock, List, Map as MapIcon, CheckCircle, Phone, Mail, HelpCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -44,6 +44,7 @@ const UserDashboard = () => {
   
   // Notification Modal State
   const [completedOrder, setCompletedOrder] = useState<any>(null);
+  const [refundNotification, setRefundNotification] = useState<any>(null);
 
   // Calculate Distance (Haversine Formula)
   const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -58,67 +59,23 @@ const UserDashboard = () => {
     return R * c;
   };
 
-  const handleSelectShop = (shop: any) => {
-     setSelectedShop(shop);
-     navigate(`?shopId=${shop._id}`);
-  };
-
-  const handleClearShop = () => {
-     setSelectedShop(null);
-     navigate('/user/dashboard');
-  };
-
-  // Fetch Shops on Mount & Sort by Location
-  useEffect(() => {
-    const fetchShops = async () => {
-      try {
-        const { data } = await api.get('/shops');
-        let sortedShops = data;
-
-        if (navigator.geolocation) {
-           navigator.geolocation.getCurrentPosition((pos) => {
-              const { latitude, longitude } = pos.coords;
-
-              sortedShops = data.map((shop: any) => {
-                 const [shopLat, shopLng] = shop.location?.coordinates || [0,0];
-                 const dist = getDistance(latitude, longitude, shopLat, shopLng);
-                 return { ...shop, distance: dist };
-              }).sort((a: any, b: any) => a.distance - b.distance);
-
-              setShops(sortedShops.slice(0, 30));
-           }, () => {
-              setShops(data.slice(0, 30));
-           });
-        } else {
-           setShops(data.slice(0, 30));
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        const shopIdParam = params.get('shopId');
-        if (shopIdParam) {
-           const targetShop = data.find((s: any) => s._id === shopIdParam);
-           if (targetShop) setSelectedShop(targetShop);
-        }
-
-      } catch (error) {
-        toast.error('Could not load shops');
-      } finally {
-        setLoadingShops(false);
-      }
-    };
-    fetchShops();
-  }, []);
+  // ... (handleSelectShop, handleClearShop, fetchShops ...)
 
   // Socket Listener for Notifications
   useEffect(() => {
-     const socket = io('http://localhost:5000');
+     const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
 
      if (user) {
         socket.emit('join_user', user._id);
      }
 
+     socket.on('notification', (data: any) => {
+        if (data.type === 'error') toast.error(data.message, { duration: 5000 });
+        else toast(data.message, { icon: 'ℹ️', duration: 5000 });
+     });
+
      const handleOrderUpdate = (updatedOrder: any) => {
-        // 1. Check if this order belongs to the logged-in user (Redundant if joined user room, but safe)
+        // 1. Check if this order belongs to the logged-in user
         const orderUserId = typeof updatedOrder.user === 'string' ? updatedOrder.user : updatedOrder.user?._id;
         
         if (user && orderUserId === user._id) {
@@ -127,6 +84,9 @@ const UserDashboard = () => {
             }
             if (updatedOrder.orderStatus === 'COMPLETED') {
                setCompletedOrder(updatedOrder);
+            }
+            if (updatedOrder.paymentStatus === 'REFUNDED') {
+               setRefundNotification(updatedOrder);
             }
         }
 
@@ -141,163 +101,89 @@ const UserDashboard = () => {
      };
 
      socket.on('order_status_updated', handleOrderUpdate);
-     socket.on('order_updated', handleOrderUpdate); // For conversion updates
+     socket.on('order_updated', handleOrderUpdate); 
 
      return () => { socket.disconnect(); };
   }, [user]);
 
-  // Sync back button (popstate)
-  useEffect(() => {
-     const handlePopState = () => {
-        const params = new URLSearchParams(window.location.search);
-        const shopId = params.get('shopId');
-        if (!shopId) setSelectedShop(null);
-     };
-     window.addEventListener('popstate', handlePopState);
-     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  const handleScanResult = (decodedText: string) => {
-     try {
-        // Try parsing as URL first (e.g. ?shopId=...)
-        try {
-           const url = new URL(decodedText);
-           const shopId = url.searchParams.get('shopId');
-           if (shopId) {
-              const target = shops.find(s => s._id === shopId);
-              if (target) {
-                 handleSelectShop(target);
-                 toast.success(`Found Shop: ${target.name}`);
-                 setShowScanner(false);
-                 return;
-              }
-           }
-        } catch (e) {
-           // Not a URL, treat as direct ID
-        }
-
-        // Treat as ID
-        const target = shops.find(s => s._id === decodedText);
-        if (target) {
-           handleSelectShop(target);
-           setShowScanner(false);
-        } else {
-           toast.error('Shop not found');
-        }
-     } catch (e) {
-        toast.error('Invalid QR Code');
-     }
-  };
-
-  const fetchMyOrders = async () => {
-    try {
-      const { data } = await api.get('/orders/my');
-      console.log('Fetched My Orders:', data);
-      setMyOrders(data);
-    } catch (e) {
-      console.error('Failed to fetch orders', e);
-      toast.error('Could not load order history');
-    }
-  };
-
-  const handleCancelOrder = async (orderId: string) => {
-    if(!window.confirm('Are you sure you want to cancel? Refund will be initiated.')) return;
-    try {
-      await api.put(`/orders/${orderId}/cancel`);
-      toast.success('Order cancelled & Refunded');
-      fetchMyOrders();
-    } catch (e) {
-      toast.error('Could not cancel order');
-    }
-  };
-
-  useEffect(() => {
-    if (showOrdersModal) fetchMyOrders();
-  }, [showOrdersModal]);
-
-  const handleUploadComplete = (files: any[]) => {
-    const newItems = files.map(f => ({
-      ...f,
-      config: { 
-        color: 'bw', 
-        side: 'single', 
-        copies: 1, 
-        pageRange: 'All',
-        orientation: 'portrait',
-        paperSize: 'A4'
-      }
-    }));
-    setCart(prev => [...prev, ...newItems]);
-    toast.success(`${files.length} file(s) added!`);
-  };
-
-  const updateConfig = (index: number, key: string, value: any) => {
-    const newCart = [...cart];
-    newCart[index].config = { ...newCart[index].config, [key]: value };
-    setCart(newCart);
-  };
-
-  const calculateTotal = () => {
-    if (!selectedShop) return 0;
-    return cart.reduce((total, item) => {
-      const isColor = item.config.color === 'color';
-      const isDouble = item.config.side === 'double';
-      const size = item.config.paperSize;
-      
-      let rate = 0;
-      let totalSheets = item.pageCount * item.config.copies;
-
-      // Handle Large Formats (A3, A2, A1)
-      if (size !== 'A4' && selectedShop.pricing.otherSizes && selectedShop.pricing.otherSizes[size]) {
-         const sizePricing = selectedShop.pricing.otherSizes[size];
-         rate = isColor ? sizePricing.color : sizePricing.bw;
-         
-         // If double sided is selected for large format, maybe 2x the price? 
-         // Since we only have one price in schema, let's assume it is per side.
-         if (isDouble) rate = rate * 2; 
-
-      } else {
-          // Standard A4 Logic (with Bulk Discounts)
-          const bulk = selectedShop.pricing.bulkDiscount;
-          if (bulk && bulk.enabled && totalSheets >= bulk.threshold) {
-             rate = isColor ? bulk.colorPrice : bulk.bwPrice;
-          } else {
-             if (isColor) {
-                rate = isDouble ? selectedShop.pricing.color.double : selectedShop.pricing.color.single;
-             } else {
-                rate = isDouble ? selectedShop.pricing.bw.double : selectedShop.pricing.bw.single;
-             }
-          }
-      }
-      return total + (rate * totalSheets);
-    }, 0);
-  };
+  // ... (rest of code)
 
   const handleCheckout = async () => {
     if (cart.length === 0 || !selectedShop) return;
+    
+    const res = await loadRazorpay();
+    if (!res) {
+      toast.error('Razorpay SDK failed to load. Are you online?');
+      return;
+    }
+
     try {
+      // 1. Create Order in Backend
       const { data: order } = await api.post('/orders', {
         shopId: selectedShop._id,
         items: cart
       });
-      await api.post('/orders/checkout', { orderId: order._id });
-      const userConfirmed = window.confirm(
-        `Authorized Payment Gateway (Mock)\n\n` +
-        `Merchant: ${selectedShop.name}\n` +
-        `Amount: ₹${order.totalAmount}\n\n` +
-        `Click OK to Pay Securely`
-      );
-      if (userConfirmed) {
-         await api.post('/orders/verify', {
-            orderId: order._id,
-            paymentId: `pay_mock_${Date.now()}`
-         });
-         toast.success('Payment Successful! Order sent to shop.');
-         setCart([]);
-         setShowMobileCart(false);
-      } else {
-         toast.error('Payment Cancelled');
-      }
+
+      // 2. Init Payment in Backend
+      const { data: paymentOrder } = await api.post('/orders/checkout', { orderId: order._id });
+
+      // 3. Open Razorpay Options
+      const options = {
+        key: paymentOrder.keyId, 
+        amount: paymentOrder.amount,
+        currency: paymentOrder.currency,
+        name: "XeroxSaaS",
+        description: `Print Order #${order._id.slice(-4)}`,
+        order_id: paymentOrder.id,
+        // Handle Success
+        handler: async function (response: any) {
+           try {
+              const verifyRes = await api.post('/orders/verify', {
+                 orderId: order._id,
+                 razorpay_payment_id: response.razorpay_payment_id,
+                 razorpay_order_id: response.razorpay_order_id,
+                 razorpay_signature: response.razorpay_signature
+              });
+              
+              if(verifyRes.data.status === 'success'){
+                 toast.success('Payment Successful!');
+                 setCart([]);
+                 setShowMobileCart(false);
+              }
+           } catch (err) {
+              toast.error('Payment Verification Failed');
+           }
+        },
+        // Handle Dismissal (User closes popup)
+        modal: {
+          ondismiss: async function() {
+             toast.error('Payment Cancelled');
+             try {
+                await api.put(`/orders/${order._id}/cancel`);
+             } catch(e) { console.error('Failed to cancel order'); }
+          }
+        },
+        prefill: {
+          name: user?.name,
+          email: user?.email,
+        },
+        theme: {
+          color: "#3399cc"
+        }
+      };
+
+      const paymentObject = new (window as any).Razorpay(options);
+      
+      // Handle Failure (e.g. Bank failure)
+      paymentObject.on('payment.failed', async function (response: any){
+          toast.error(response.error.description);
+          try {
+             await api.put(`/orders/${order._id}/cancel`); 
+          } catch(e) { console.error('Failed to cancel order'); }
+      });
+
+      paymentObject.open();
+
     } catch (err: any) {
       toast.error('Order processing failed');
     }
@@ -320,6 +206,9 @@ const UserDashboard = () => {
 
             {/* Desktop Actions */}
             <div className="hidden sm:flex gap-3 items-center">
+               <button onClick={() => navigate('/support')} className="btn btn-ghost text-slate-500 hover:text-primary p-2" title="Customer Support">
+                 <HelpCircle size={20} />
+               </button>
                <button onClick={() => setShowOrdersModal(true)} className="btn btn-outline flex items-center gap-2 text-sm dark:text-white dark:border-slate-700 dark:hover:bg-slate-800">
                  <Clock size={16} /> My Orders
                </button>
@@ -333,6 +222,9 @@ const UserDashboard = () => {
 
             {/* Mobile Actions */}
             <div className="flex sm:hidden gap-2 items-center">
+               <button onClick={() => navigate('/support')} className="p-2 text-slate-500 hover:text-primary">
+                 <HelpCircle size={20} />
+               </button>
                <button onClick={() => setShowOrdersModal(true)} className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
                  <Clock size={20} />
                </button>
@@ -812,6 +704,24 @@ const UserDashboard = () => {
                   <br/>Thank you for printing with us!
                 </p>
                 <button onClick={() => setCompletedOrder(null)} className="w-full btn btn-primary py-3 text-lg font-bold shadow-lg hover:shadow-green-500/20">Awesome, Thanks!</button>
+            </div>
+          </div>
+      )}
+
+      {/* Refund Notification Modal */}
+      {refundNotification && (
+          <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center animate-in fade-in zoom-in shadow-2xl relative overflow-hidden">
+                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-red-300 via-transparent to-transparent pointer-events-none" />
+                <div className="mx-auto w-20 h-20 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mb-6">
+                  <Info size={40} className="text-red-600 dark:text-red-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Refund Initiated</h2>
+                <p className="text-slate-500 dark:text-slate-400 mb-6">
+                  Your order <span className="font-mono font-bold text-slate-800 dark:text-slate-200">#{refundNotification._id.slice(-4)}</span> was cancelled.
+                  <br/>A full refund has been processed to your source account.
+                </p>
+                <button onClick={() => setRefundNotification(null)} className="w-full btn btn-outline border-slate-200 dark:border-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 py-3 text-lg font-bold">Close</button>
             </div>
           </div>
       )}

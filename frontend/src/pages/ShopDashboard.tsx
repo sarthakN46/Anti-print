@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { LayoutDashboard, LogOut, Printer, RefreshCw, CheckCircle, Clock, FileText, Layers, Palette, Power, UserPlus, X, Settings, QrCode } from 'lucide-react';
+import { LayoutDashboard, LogOut, Printer, RefreshCw, CheckCircle, Clock, FileText, Layers, Palette, Power, UserPlus, X, Settings, QrCode, HelpCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import QRCode from 'react-qr-code';
@@ -12,6 +12,34 @@ const ShopDashboard = () => {
   const { user, logout } = useContext(AuthContext)!;
   const navigate = useNavigate();
   
+  // Mobile Restriction
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  if (isMobile) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          <div className="bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+            <LayoutDashboard size={32} />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Desktop Only</h2>
+          <p className="text-slate-500 dark:text-slate-400 mb-6">
+            The Shop Dashboard is optimized for desktop use to manage orders efficiently. Please switch to a larger screen.
+          </p>
+          <button onClick={() => { logout(); navigate('/login'); }} className="btn btn-outline w-full justify-center">
+            Go Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const [orders, setOrders] = useState<any[]>([]);
   const [shop, setShop] = useState<any>(null);
   const [stats, setStats] = useState({ pending: 0, printed: 0, revenue: 0 });
@@ -110,7 +138,7 @@ const ShopDashboard = () => {
     fetchShopDetails();
     fetchOrders();
 
-    const newSocket = io('http://localhost:5000');
+    const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
     setSocket(newSocket);
 
     return () => { newSocket.close(); };
@@ -292,6 +320,9 @@ const ShopDashboard = () => {
                <Settings size={20} /> Settings
              </button>
           )}
+          <button onClick={() => navigate('/support')} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors text-left">
+               <HelpCircle size={20} /> Support
+          </button>
         </nav>
         <div className="p-4 border-t border-slate-700 dark:border-slate-800"><button onClick={() => { logout(); navigate('/login'); }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-400/10 rounded-lg"><LogOut size={16} /> Logout</button></div>
       </aside>

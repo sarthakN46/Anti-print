@@ -28,15 +28,14 @@ const resetDb = async () => {
     console.log('⏳ Connecting to MinIO Storage...');
     
     const s3 = new AWS.S3({
-      accessKeyId: process.env.MINIO_ROOT_USER || 'minioadmin',
-      secretAccessKey: process.env.MINIO_ROOT_PASSWORD || 'minioadmin',
-      endpoint: `http://localhost:${process.env.MINIO_PORT || 9000}`,
+      accessKeyId: process.env.MINIO_ACCESS_KEY || process.env.MINIO_ROOT_USER || 'minioadmin',
+      secretAccessKey: process.env.MINIO_SECRET_KEY || process.env.MINIO_ROOT_PASSWORD || 'minioadmin',
+      endpoint: process.env.MINIO_ENDPOINT || `http://localhost:${process.env.MINIO_PORT || 9000}`,
       s3ForcePathStyle: true,
       signatureVersion: 'v4',
     });
-
-    const bucketName = process.env.MINIO_DEFAULT_BUCKET || 'anti-print';
-
+    
+    const bucketName = process.env.MINIO_BUCKET_NAME || process.env.MINIO_DEFAULT_BUCKET || 'anti-print';
     // List all objects
     try {
       const listedObjects = await s3.listObjectsV2({ Bucket: bucketName }).promise();

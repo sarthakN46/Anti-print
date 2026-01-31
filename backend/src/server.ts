@@ -55,7 +55,9 @@ app.set('io', io);
 
 // 4. Middleware (The "Security Guards")
 app.use(express.json()); // Allow app to parse JSON bodies
-app.use(cors());         // Allow frontend to talk to backend
+app.use(cors({
+  origin: process.env.CLIENT_URL || "*"
+}));         // Allow frontend to talk to backend
 app.use(helmet());       // Secure HTTP headers
 app.use(morgan('dev'));  // Log requests to console
 app.use('/api/auth', authRoutes);
