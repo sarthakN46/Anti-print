@@ -12,4 +12,6 @@ echo "Building Project..."
 npm run build
 
 echo "Copying Python Scripts..."
-cp -r src/scripts dist/scripts
+mkdir -p dist/scripts
+cp -r src/scripts/* dist/scripts/
+ls -R dist/scripts  # Debug: Check if files exist
