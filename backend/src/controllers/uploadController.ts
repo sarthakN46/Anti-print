@@ -18,43 +18,46 @@ const runAnalyzer = (filePath: string): Promise<{ pageCount: number, type: strin
       // Use process.cwd() for reliable path resolution in Render/Docker
       const scriptPath = path.join(process.cwd(), 'dist/scripts/analyze.py');
       
-      // DEBUG: Log paths
-      console.log('--- DEBUG PATHS ---');
-      console.log('CWD:', process.cwd());
-      console.log('Script Path:', scriptPath);
-      try {
-         console.log('Contents of dist:', fs.readdirSync(path.join(process.cwd(), 'dist')));
-         console.log('Contents of dist/scripts:', fs.readdirSync(path.join(process.cwd(), 'dist/scripts')));
-      } catch (e) {
-         console.log('Error reading dirs:', e);
-      }
-      // -----------------
+      console.log(`[Analyzer] Starting analysis for: ${filePath}`);
+      console.log(`[Analyzer] Script path: ${scriptPath}`);
 
       const pyProcess = spawn('python3', [scriptPath, filePath]);
       
       let dataString = '';
+      let errorString = '';
       
       pyProcess.stdout.on('data', (data) => {
+         console.log(`[Analyzer stdout]: ${data}`);
          dataString += data.toString();
       });
 
       pyProcess.stderr.on('data', (data) => {
-         console.error(`[Analyzer Error]: ${data}`);
+         console.error(`[Analyzer stderr]: ${data}`);
+         errorString += data.toString();
       });
 
       pyProcess.on('close', (code) => {
+         console.log(`[Analyzer] Exited with code: ${code}`);
          if (code !== 0) {
-            console.error(`Analyzer exited with code ${code}`);
+            console.error(`[Analyzer Failed] Code ${code}. Error: ${errorString}`);
             resolve({ pageCount: 1, type: 'unknown' }); // Fallback
          } else {
             try {
-               const result = JSON.parse(dataString);
+               // Python print() might output newlines, trim it
+               const result = JSON.parse(dataString.trim());
+               console.log('[Analyzer Success] Result:', result);
                resolve(result);
             } catch (e) {
-               console.error('Failed to parse analyzer output', e);
+               console.error('[Analyzer Parse Error] Could not parse JSON:', dataString);
+               console.error(e);
                resolve({ pageCount: 1, type: 'unknown' });
             }
          }
+      });
+      
+      pyProcess.on('error', (err) => {
+          console.error('[Analyzer Process Error] Failed to start subprocess:', err);
+          resolve({ pageCount: 1, type: 'unknown' });
       });
    });
 };
