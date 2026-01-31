@@ -3,7 +3,7 @@
 set -o errexit
 
 echo "Installing Node Dependencies..."
-npm install
+npm install --production=false
 
 echo "Installing Python Dependencies..."
 pip3 install -r requirements.txt
