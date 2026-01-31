@@ -11,7 +11,7 @@ const runConverter = (inputPath: string, outputPath: string): Promise<void> => {
    return new Promise((resolve, reject) => {
       const scriptPath = path.join(__dirname, '../scripts/convert.py');
       // Python script is optimized to use existing instances via COM
-      const process = spawn('python', [scriptPath, inputPath, outputPath]);
+      const process = spawn('python3', [scriptPath, inputPath, outputPath]);
       
       process.on('close', (code) => {
          if (code === 0) resolve();
