@@ -59,7 +59,150 @@ const UserDashboard = () => {
     return R * c;
   };
 
-  // ... (handleSelectShop, handleClearShop, fetchShops ...)
+  // --- MISSING FUNCTIONS RESTORED ---
+
+  const loadRazorpay = () => {
+    return new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  const fetchShops = async () => {
+    try {
+      const { data } = await api.get('/shops');
+      
+      // Calculate distances if user geolocation is available
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            const shopsWithDistance = data.map((shop: any) => {
+               if(shop.location && shop.location.coordinates) {
+                   const [sLat, sLng] = shop.location.coordinates;
+                   return { ...shop, distance: getDistance(latitude, longitude, sLat, sLng) };
+               }
+               return { ...shop, distance: 9999 };
+            });
+            // Sort by distance
+            setShops(shopsWithDistance.sort((a: any, b: any) => a.distance - b.distance));
+            setLoadingShops(false);
+          },
+          (err) => {
+            console.error("Loc Error", err);
+            setShops(data); // Fallback without distance
+            setLoadingShops(false);
+          }
+        );
+      } else {
+        setShops(data);
+        setLoadingShops(false);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to load shops');
+      setLoadingShops(false);
+    }
+  };
+
+  const fetchOrders = async () => {
+     try {
+        const { data } = await api.get('/orders/my-orders'); // Ensure backend has this route or uses generic /orders with filtering
+        setMyOrders(data);
+     } catch (error) {
+        console.error("Failed to fetch orders");
+     }
+  };
+
+  useEffect(() => {
+    fetchShops();
+    fetchOrders();
+    // Poll for orders every 30s
+    const interval = setInterval(fetchOrders, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSelectShop = (shop: any) => {
+    setSelectedShop(shop);
+    setCart([]); // Clear cart when switching shops
+  };
+
+  const handleClearShop = () => {
+    setSelectedShop(null);
+    setCart([]);
+  };
+
+  const handleUploadComplete = (fileData: any) => {
+    setCart(prev => [
+      ...prev,
+      {
+        storageKey: fileData.key,
+        originalName: fileData.originalName,
+        fileHash: fileData.fileHash,
+        pageCount: fileData.pageCount || 1, // Default to 1 if detection fails
+        previewUrl: fileData.previewUrl,
+        fileType: fileData.mimetype,
+        config: {
+          color: 'bw',
+          side: 'single',
+          copies: 1,
+          pageRange: 'All',
+          orientation: 'portrait',
+          paperSize: 'A4'
+        }
+      }
+    ]);
+    toast.success('File added to cart');
+  };
+
+  const updateConfig = (index: number, key: string, value: any) => {
+    const newCart = [...cart];
+    newCart[index].config = { ...newCart[index].config, [key]: value };
+    setCart(newCart);
+  };
+
+  const calculateTotal = () => {
+    if (!selectedShop) return 0;
+    return cart.reduce((total, item) => {
+      const rate = item.config.color === 'bw' 
+        ? selectedShop.pricing.bw.single 
+        : selectedShop.pricing.color.single;
+      // Simple logic: rate * pages * copies. 
+      // (Advanced logic for double-sided could be added here)
+      return total + (rate * item.pageCount * item.config.copies);
+    }, 0);
+  };
+
+  const handleScanResult = (result: string) => {
+     // Expected format: "SHOP:shop_id_here"
+     if (result.startsWith("SHOP:")) {
+        const shopId = result.split(":")[1];
+        const foundShop = shops.find(s => s._id === shopId);
+        if (foundShop) {
+           handleSelectShop(foundShop);
+           setShowScanner(false);
+           toast.success(` joined ${foundShop.name}`);
+        } else {
+           toast.error('Shop not found in list. Refreshing...');
+           fetchShops();
+        }
+     }
+  };
+
+  const handleCancelOrder = async (orderId: string) => {
+     if(!window.confirm('Are you sure you want to cancel this order? Refund will be initiated.')) return;
+     
+     try {
+        await api.put(`/orders/${orderId}/cancel`);
+        toast.success('Cancellation request sent');
+        fetchOrders();
+     } catch (error) {
+        toast.error('Failed to cancel order');
+     }
+  };
 
   // Socket Listener for Notifications
   useEffect(() => {
