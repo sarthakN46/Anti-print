@@ -25,7 +25,7 @@ COPY requirements.txt ./
 # We filter out windows-only packages from requirements if present, 
 # or just install specific ones.
 # Safer to just install what we strictly need here to avoid errors.
-RUN pip3 install pypdf python-docx python-pptx docx2pdf
+RUN pip3 install --break-system-packages pypdf python-docx python-pptx docx2pdf
 
 # Copy source code
 COPY . .
