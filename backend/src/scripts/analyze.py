@@ -22,6 +22,7 @@ def convert_to_pdf_temp(input_path):
             if shutil.which('soffice') is not None:
                 cmd = 'soffice'
             else:
+                sys.stderr.write("[Analyze] LibreOffice/soffice NOT found in PATH\n")
                 return None
 
         out_dir = os.path.dirname(input_path)
@@ -36,18 +37,27 @@ def convert_to_pdf_temp(input_path):
             input_path
         ]
         
-        # Run conversion
-        subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+        sys.stderr.write(f"[Analyze] Running: {' '.join(args)}\n")
         
+        # Run conversion
+        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
+        
+        if result.returncode != 0:
+             sys.stderr.write(f"[Analyze] LibreOffice Failed: {result.stderr}\n")
+             return None
+
         # Expected output file
         base_name = os.path.splitext(os.path.basename(input_path))[0]
         pdf_path = os.path.join(out_dir, base_name + '.pdf')
         
         if os.path.exists(pdf_path):
             return pdf_path
+            
+        sys.stderr.write(f"[Analyze] PDF not found at {pdf_path}\n")
         return None
         
-    except Exception:
+    except Exception as e:
+        sys.stderr.write(f"[Analyze] Conversion Exception: {e}\n")
         return None
 
 def analyze_file(file_path):
