@@ -1,9 +1,23 @@
+import readline from 'readline';
 import s3, { BUCKET_NAME } from '../config/s3';
 
 // Manual trigger for the cleanup logic (Dry Run or Real)
 const manualCleanup = async () => {
-  console.log('🧹 Triggering Manual Cleanup...');
-  try {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  rl.question('⚠️  WARNING: This will delete files from S3 based on the age threshold. Continue? (yes/no): ', async (answer) => {
+    if (answer.toLowerCase() !== 'yes') {
+      console.log('❌ Operation cancelled.');
+      process.exit(0);
+    }
+    
+    rl.close();
+    
+    console.log('🧹 Triggering Manual Cleanup...');
+    try {
     const listParams = { Bucket: BUCKET_NAME };
     const listedObjects = await s3.listObjectsV2(listParams).promise();
 

@@ -8,9 +8,26 @@ const envPath = path.resolve(__dirname, '../../.env');
 console.log(`Loading .env from: ${envPath}`);
 dotenv.config({ path: envPath });
 
+import readline from 'readline';
+
+// ... (Load Env logic)
+
 const resetDb = async () => {
-  try {
-    // --- STEP 1: CLEAR MONGODB ---
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  rl.question('⚠️  WARNING: This will WIPE ALL DATA from MongoDB and MinIO/S3. Are you sure? (yes/no): ', async (answer) => {
+    if (answer.toLowerCase() !== 'yes') {
+      console.log('❌ Operation cancelled.');
+      process.exit(0);
+    }
+    
+    rl.close();
+
+    try {
+      // --- STEP 1: CLEAR MONGODB ---
     if (!process.env.MONGO_URI) throw new Error('MONGO_URI not found');
 
     console.log('⏳ Connecting to MongoDB...');

@@ -15,7 +15,8 @@ interface MulterRequest extends Request {
 // Helper: Run Python Script
 const runAnalyzer = (filePath: string): Promise<{ pageCount: number, type: string }> => {
    return new Promise((resolve, reject) => {
-      const scriptPath = path.join(__dirname, '../scripts/analyze.py');
+      // Use process.cwd() for reliable path resolution in Render/Docker
+      const scriptPath = path.join(process.cwd(), 'dist/scripts/analyze.py');
       const process = spawn('python3', [scriptPath, filePath]);
       
       let dataString = '';

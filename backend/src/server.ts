@@ -14,6 +14,7 @@ import shopRoutes from './routes/shopRoutes';
 import uploadRoutes from './routes/uploadRoutes'; 
 import orderRoutes from './routes/orderRoutes';
 import { initSocket } from './utils/socket';
+import runCleanup from './cron';
 
 // 1. Initialize App
 const app = express();
@@ -21,6 +22,9 @@ const server = http.createServer(app);
 
 // 2. Connect to Database
 connectDB();
+
+// 2.1 Start Cleanup Job
+runCleanup();
 
 // 3. Socket.io Setup
 const io = new Server(server, {
