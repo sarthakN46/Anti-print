@@ -136,7 +136,7 @@ const UserDashboard = () => {
   };
 
   const handleUploadComplete = (files: any[]) => {
-    const newItems = files.map(fileData => ({
+    const newItems: CartItem[] = files.map(fileData => ({
         storageKey: fileData.storageKey,
         originalName: fileData.originalName,
         fileHash: fileData.fileHash,
@@ -144,12 +144,12 @@ const UserDashboard = () => {
         previewUrl: fileData.previewUrl,
         fileType: fileData.mimeType,
         config: {
-          color: 'bw',
-          side: 'single',
+          color: 'bw' as 'bw',
+          side: 'single' as 'single',
           copies: 1,
           pageRange: 'All',
-          orientation: 'portrait',
-          paperSize: 'A4'
+          orientation: 'portrait' as 'portrait',
+          paperSize: 'A4' as 'A4'
         }
     }));
     
