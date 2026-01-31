@@ -184,6 +184,11 @@ const UserDashboard = () => {
         const foundShop = shops.find(s => s._id === shopId);
         
         if (foundShop) {
+           if (foundShop.status === 'CLOSED') {
+              toast.error(`Shop '${foundShop.name}' is currently CLOSED.`);
+              setShowScanner(false);
+              return;
+           }
            handleSelectShop(foundShop);
            setShowScanner(false);
            toast.success(`Joined ${foundShop.name}`);
@@ -750,7 +755,7 @@ const UserDashboard = () => {
                       type="number"
                       min="1"
                       className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                      value={item.config.copies}
+                      value={item.config.copies || ''}
                       onChange={(e) => {
                          const val = parseInt(e.target.value);
                          if (isNaN(val)) updateConfig(idx, 'copies', 0);
