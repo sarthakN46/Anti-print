@@ -2,7 +2,12 @@ import AWS from 'aws-sdk';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-const endpoint = process.env.MINIO_ENDPOINT || `http://localhost:${process.env.MINIO_PORT || 9000}`;
+// If MINIO_ENDPOINT is set, use it.
+// If NOT set and NOT production, default to localhost (MinIO).
+// If NOT set and IS production, default to undefined (AWS S3 defaults).
+const endpoint = process.env.MINIO_ENDPOINT 
+  ? process.env.MINIO_ENDPOINT 
+  : (!isProduction ? `http://localhost:${process.env.MINIO_PORT || 9000}` : undefined);
 
 const s3 = new AWS.S3({
   accessKeyId: process.env.MINIO_ACCESS_KEY || process.env.MINIO_ROOT_USER || 'minioadmin',
