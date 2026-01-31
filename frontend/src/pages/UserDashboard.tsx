@@ -110,7 +110,7 @@ const UserDashboard = () => {
 
   const fetchOrders = async () => {
      try {
-        const { data } = await api.get('/orders/my-orders'); // Ensure backend has this route or uses generic /orders with filtering
+        const { data } = await api.get('/orders/my'); // Corrected route
         setMyOrders(data);
      } catch (error) {
         console.error("Failed to fetch orders");
