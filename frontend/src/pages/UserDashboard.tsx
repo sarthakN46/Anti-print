@@ -198,9 +198,12 @@ const UserDashboard = () => {
               toast.loading("Fetching shop details...");
               const { data: shop } = await api.get(`/shops/qr/${shopId}`);
               
+              console.log("[QR Scan] Fetched Shop:", shop); // Debug
+
               toast.dismiss();
               if (shop) {
-                 if (shop.status === 'CLOSED') {
+                 const status = shop.status?.toUpperCase();
+                 if (status === 'CLOSED') {
                     toast.error(`Shop '${shop.name}' is currently CLOSED.`);
                     setShowScanner(false);
                     return;
