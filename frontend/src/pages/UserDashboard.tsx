@@ -192,25 +192,19 @@ const UserDashboard = () => {
            // 2. If not found (e.g. shop list limited by distance), fetch specific shop
            try {
               toast.loading("Fetching shop details...");
-              // We need a route for this, or just filter getAllShops? 
-              // Better to use generic GET /shops/:id if available, or just GET /shops and find.
-              // Let's assume GET /shops supports getting all and we filter, or we add a new endpoint.
-              // Ideally: const { data } = await api.get(`/shops/${shopId}`);
-              // But backend might not have public get-by-id. Let's check shopController.
-              // shopController has getMyShop (private) and getAllShops (public).
-              // We will just try to reload all shops and check again, or handle gracefully.
-              
-              // For now, let's just show error if not in list (simplest fix without backend change)
-              // OR better: Just set the ID and let the UI try to render (might break if details missing).
+              const { data: shop } = await api.get(`/shops/qr/${shopId}`);
               
               toast.dismiss();
-              toast.error('Shop is too far or not listed. Refreshing...');
-              await fetchShops(); 
-              // Retry find after fetch
-              // (This is tricky due to async state updates. User has to scan again).
+              if (shop) {
+                 handleSelectShop(shop);
+                 setShowScanner(false);
+                 toast.success(`Joined ${shop.name}`);
+              } else {
+                 toast.error('Shop not found');
+              }
            } catch(e) {
               toast.dismiss();
-              toast.error('Could not find shop');
+              toast.error('Could not find shop. It might be closed.');
            }
         }
      }
