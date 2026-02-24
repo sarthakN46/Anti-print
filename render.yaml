@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: xerox-backend
+    env: docker
+    plan: free
+    dockerContext: backend
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      # Add other env vars here or in dashboard

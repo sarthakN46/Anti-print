@@ -1,0 +1,467 @@
+import { Response } from 'express';
+import { AuthRequest } from '../middlewares/authMiddleware';
+import Order from '../models/Order';
+import Shop from '../models/Shop';
+import s3, { BUCKET_NAME } from '../config/s3';
+import { processOrderFiles } from '../services/conversionService';
+import { getIO } from '../utils/socket';
+import Razorpay from 'razorpay';
+import crypto from 'crypto';
+
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID!,
+  key_secret: process.env.RAZORPAY_KEY_SECRET!
+});
+
+// Helper: Generate a random 4-digit pickup code
+const generatePickupCode = () => Math.floor(1000 + Math.random() * 9000).toString();
+
+// @desc    Create new print order
+// @route   POST /api/orders
+// @access  Private (User)
+export const createOrder = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { shopId, items } = req.body;
+
+    // 1. Fetch Shop Rules
+    const shop = await Shop.findById(shopId);
+    if (!shop) {
+      res.status(404).json({ message: 'Shop not found' });
+      return;
+    }
+
+    // Prepare Order ID (MongoDB ID is generated on instantiation)
+    const newOrder = new Order({
+      shop: shopId,
+      user: req.user?._id,
+      items: [], // Will fill after processing
+      totalAmount: 0,
+      pickupCode: generatePickupCode(),
+      paymentStatus: 'PENDING',
+      orderStatus: 'QUEUED'
+    });
+
+    // 2. Process Items & Move Files
+    let grandTotal = 0;
+    const processedItems = [];
+
+    // Folder Name: <ShopName>_<ShopID>
+    // Sanitize Shop Name for folder safety
+    const safeShopName = shop.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const shopFolder = `${safeShopName}_${shop._id}`;
+
+    // Orderer Name
+    const safeUserName = req.user?.name.replace(/[^a-zA-Z0-9]/g, '_') || 'Guest';
+    const orderFolder = `${safeUserName}_${newOrder._id}`;
+
+    for (const item of items) {
+       const isColor = item.config.color === 'color';
+       const isDouble = item.config.side === 'double';
+       const size = item.config.paperSize || 'A4'; // Default to A4
+       
+       let fileCost = 0;
+       
+       // Calculate Total Sheets (Logical Pages)
+       const totalSheets = item.pageCount * item.config.copies;
+
+       let rate = 0;
+
+       // Handle Large Formats (A3, A2, A1)
+       if (size !== 'A4' && shop.pricing.otherSizes && (shop.pricing.otherSizes as any)[size]) {
+           const sizePricing = (shop.pricing.otherSizes as any)[size];
+           rate = isColor ? sizePricing.color : sizePricing.bw;
+           
+           // Match frontend logic: Double sided large format = 2x rate (per page)
+           if (isDouble) rate = rate * 2;
+
+       } else {
+           // Standard A4 Logic
+           const bulk = shop.pricing.bulkDiscount;
+           if (bulk && bulk.enabled && totalSheets >= bulk.threshold) {
+             rate = isColor ? bulk.colorPrice : bulk.bwPrice;
+           } else {
+             if (isColor) {
+                rate = isDouble ? shop.pricing.color.double : shop.pricing.color.single;
+             } else {
+                rate = isDouble ? shop.pricing.bw.double : shop.pricing.bw.single;
+             }
+           }
+       }
+       
+       fileCost = rate * totalSheets;
+       grandTotal += fileCost;
+
+       // Move File in MinIO
+       // Current Key: <ShopID>/temp/<UUID>.<ext>
+       // Target Key: <ShopName_ShopID>/<UserName_OrderID>/<OriginalName>
+       
+       const oldKey = item.storageKey;
+       
+       const newKey = `${shopFolder}/${orderFolder}/${item.originalName}`;
+
+       try {
+          await s3.copyObject({
+             Bucket: BUCKET_NAME,
+             CopySource: `/${BUCKET_NAME}/${oldKey}`, // CopySource requires Bucket/Key
+             Key: newKey
+          }).promise();
+
+          // Delete old temp file (Async, don't wait)
+          s3.deleteObject({ Bucket: BUCKET_NAME, Key: oldKey }).promise().catch(console.error);
+
+          processedItems.push({
+             ...item,
+             storageKey: newKey,
+             calculatedCost: fileCost
+          });
+
+       } catch (err) {
+          console.error(`Failed to move file ${oldKey} to ${newKey}`, err);
+          // Fallback: keep old key if move fails
+          processedItems.push({
+             ...item,
+             calculatedCost: fileCost
+          });
+       }
+    }
+
+    newOrder.items = processedItems;
+    newOrder.totalAmount = grandTotal;
+    
+    await newOrder.save();
+
+    res.status(201).json(newOrder);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Order creation failed' });
+  }
+};
+
+// @desc    Initiate Payment (Razorpay)
+// @route   POST /api/orders/checkout
+// @access  Private (User)
+export const createPaymentOrder = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { orderId } = req.body;
+    const order = await Order.findById(orderId);
+    
+    if (!order) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    const options = {
+      amount: Math.round(order.totalAmount * 100), // Amount in paise
+      currency: "INR",
+      receipt: `order_rcptid_${order._id}`,
+    };
+
+    const razorpayOrder = await razorpay.orders.create(options);
+
+    if (!razorpayOrder) {
+      res.status(500).json({ message: 'Razorpay order creation failed' });
+      return;
+    }
+
+    res.json({
+      id: razorpayOrder.id,
+      currency: razorpayOrder.currency,
+      amount: razorpayOrder.amount,
+      keyId: process.env.RAZORPAY_KEY_ID // Send Key ID to frontend
+    });
+
+  } catch (error) {
+    console.error("Razorpay Error:", error);
+    res.status(500).json({ message: 'Payment initiation failed' });
+  }
+};
+
+// @desc    Verify Payment & Notify Shop
+// @route   POST /api/orders/verify
+// @access  Private (User)
+export const verifyPayment = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { orderId, razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+    
+    const order = await Order.findById(orderId);
+    if (!order) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    // Verify Signature
+    const generated_signature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
+      .update(razorpay_order_id + "|" + razorpay_payment_id)
+      .digest("hex");
+
+    if (generated_signature !== razorpay_signature) {
+       order.paymentStatus = 'FAILED';
+       order.orderStatus = 'CANCELLED';
+       await order.save();
+       res.status(400).json({ message: 'Payment verification failed: Invalid Signature' });
+       return;
+    }
+
+    // Update Order
+    order.paymentStatus = 'PAID';
+    order.paymentId = razorpay_payment_id;
+    order.orderStatus = 'PROCESSING'; // Set to PROCESSING while converting
+    await order.save();
+
+    // Populate User for Socket Emission
+    await order.populate('user', 'name email');
+
+    // Emit Socket Event (Only to User, Shop will be notified after conversion)
+    try {
+      const io = getIO();
+      // Safe ID Extraction
+      const userId = order.user && (order.user as any)._id ? (order.user as any)._id.toString() : order.user?.toString();
+      
+      if (userId) {
+         io.to(userId).emit('order_status_updated', order);
+      }
+    } catch (e) {
+      console.error('Socket emission failed', e);
+    }
+
+    // Trigger Background Conversion (Fire & Forget)
+    processOrderFiles(order._id.toString());
+
+    res.json({ status: 'success', order });
+
+  } catch (error) {
+    console.error("Verification Error:", error);
+    res.status(500).json({ message: 'Payment verification failed' });
+  }
+};
+
+// @desc    Get Orders for My Shop
+// @route   GET /api/orders/shop
+// @access  Private (Owner/Employee)
+export const getShopOrders = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // 1. Find the shop
+    let shop;
+    if (req.user?.role === 'EMPLOYEE') {
+       shop = await Shop.findById(req.user.associatedShop);
+    } else {
+       shop = await Shop.findOne({ owner: req.user?._id });
+    }
+
+    if (!shop) {
+      res.status(404).json({ message: 'Shop not found' });
+      return;
+    }
+
+    // 2. Get orders, sort by newest
+    const orders = await Order.find({ shop: shop._id })
+      .populate('user', 'name email') 
+      .sort({ createdAt: -1 });
+
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
+export const updateOrderStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { status } = req.body; 
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    order.orderStatus = status;
+    await order.save();
+
+    // Emit Socket Event to User & Shop
+    try {
+       const io = getIO();
+       const shopId = order.shop.toString();
+       const userId = order.user.toString(); 
+       
+       io.to(shopId).emit('order_status_updated', order);
+       io.to(userId).emit('order_status_updated', order);
+    } catch (e) {
+       console.error('Socket emission failed', e);
+    }
+
+    res.json(order);
+  } catch (error) {
+    res.status(500).json({ message: 'Update failed' });
+  }
+};
+
+// @desc    Cancel Order (User or Shop)
+// @route   PUT /api/orders/:id/cancel
+// @access  Private
+export const cancelOrder = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    // Check permissions (User owns it OR Shop owns it)
+    const isOwner = order.user.toString() === req.user?._id.toString();
+    
+    // Check if shop owner/employee
+    let isShopStaff = false;
+    if (req.user?.role === 'OWNER' || req.user?.role === 'EMPLOYEE') {
+       const shop = await Shop.findById(order.shop);
+       if (shop && (shop.owner.toString() === req.user._id.toString() || req.user.associatedShop?.toString() === shop._id.toString())) {
+          isShopStaff = true;
+       }
+    }
+
+    if (!isOwner && !isShopStaff) {
+       res.status(401).json({ message: 'Not authorized' });
+       return;
+    }
+
+    // Can only cancel if QUEUED
+    if (order.orderStatus !== 'QUEUED') {
+       res.status(400).json({ message: 'Cannot cancel order in progress or already completed' });
+       return;
+    }
+
+    // Refund Logic
+    if (order.paymentStatus === 'PAID') {
+       console.log(`[Refund] Initiating refund for Order ${order._id} Amount: ${order.totalAmount}`);
+       
+       try {
+         // Refund full amount
+         if (order.paymentId) {
+             await razorpay.payments.refund(order.paymentId, {
+               speed: 'normal',
+             });
+             order.paymentStatus = 'REFUNDED';
+         }
+       } catch (refundError) {
+         console.error('Razorpay Refund Failed:', refundError);
+         // We still cancel the order but maybe log the refund failure or mark as 'REFUND_FAILED'
+         // For now, let's proceed with cancellation but log it.
+       }
+    }
+
+    order.orderStatus = 'CANCELLED';
+    await order.save();
+
+    // Populate for response/socket
+    await order.populate('user', 'name email');
+
+    // Emit Socket Event
+    try {
+      const io = getIO();
+      const shopId = order.shop.toString();
+      const userId = order.user && (order.user as any)._id ? (order.user as any)._id.toString() : order.user?.toString();
+
+      io.to(shopId).emit('order_status_updated', order);
+      if (userId) {
+          io.to(userId).emit('order_status_updated', order);
+          // Send specific notifications
+          if (order.paymentStatus === 'REFUNDED') {
+             io.to(userId).emit('notification', { 
+               message: `Order #${order._id.toString().slice(-4)} Cancelled. Refund Initiated.`, 
+               type: 'info' 
+             });
+          } else {
+             io.to(userId).emit('notification', { 
+               message: `Order #${order._id.toString().slice(-4)} Cancelled by Shop.`, 
+               type: 'error' 
+             });
+          }
+      }
+    } catch (e) {
+      console.error('Socket emission failed', e);
+    }
+
+    res.json({ message: 'Order cancelled successfully', order });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Cancellation failed' });
+  }
+};
+
+// @desc    Get Shop History with Filters
+// @route   GET /api/orders/history
+// @access  Private (Owner/Employee)
+export const getShopHistory = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { startDate, endDate, search } = req.query;
+
+    // 1. Find Shop
+    let shopId;
+    if (req.user?.role === 'EMPLOYEE') {
+       shopId = req.user.associatedShop;
+    } else {
+       const shop = await Shop.findOne({ owner: req.user?._id });
+       shopId = shop?._id;
+    }
+
+    if (!shopId) {
+      res.status(404).json({ message: 'Shop not found' });
+      return;
+    }
+
+    // 2. Build Query
+    let query: any = { shop: shopId };
+
+    // Date Filter
+    if (startDate || endDate) {
+       query.createdAt = {};
+       if (startDate) query.createdAt.$gte = new Date(startDate as string);
+       if (endDate) query.createdAt.$lte = new Date(new Date(endDate as string).setHours(23,59,59));
+    }
+
+    // Search (Complex: Need to search by populated User Name)
+    // Mongoose doesn't support direct filtering on populated fields easily in `find`.
+    // We can filter AFTER fetch or use Aggregate. For scale, Aggregate is better.
+    // For MVP, if search is present, we might need to find users first?
+    // Actually, let's keep it simple: Search by Order ID (last 6 chars) or exact match.
+    // Or if search string provided, we fetch orders and filter in JS (okay for small scale).
+    
+    const orders = await Order.find(query)
+      .populate('user', 'name email')
+      .sort({ createdAt: -1 });
+
+    if (search) {
+       const searchStr = (search as string).toLowerCase();
+       const filtered = orders.filter((o: any) => 
+          o.user?.name.toLowerCase().includes(searchStr) || 
+          o._id.toString().includes(searchStr)
+       );
+       res.json(filtered);
+       return;
+    }
+
+    res.json(orders);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
+// @desc    Get My Orders (User)
+// @route   GET /api/orders/my
+// @access  Private (User)
+export const getMyOrders = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    console.log(`[getMyOrders] Fetching for user: ${req.user?._id}`);
+    const orders = await Order.find({ user: req.user?._id }).sort({ createdAt: -1 });
+    console.log(`[getMyOrders] Found ${orders.length} orders`);
+    res.json(orders);
+  } catch (error) {
+    console.error(`[getMyOrders] Error:`, error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
