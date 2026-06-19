@@ -101,12 +101,20 @@ export const paymentLimiter = rateLimit({
  * NoSQL Injection Protection
  * Strips $ and . operators from req.body, req.query, req.params
  */
-export const sanitizeInput = mongoSanitize({
-  replaceWith: '_',
-  onSanitize: ({ req, key }: { req: any; key: string }) => {
-    console.warn(`⚠️ [Security] Sanitized key "${key}" in request from ${req.ip}`);
-  },
-});
+export const sanitizeInput = (req: any, res: any, next: any) => {
+  if (req.body) req.body = mongoSanitize.sanitize(req.body, { replaceWith: '_' });
+  if (req.params) req.params = mongoSanitize.sanitize(req.params, { replaceWith: '_' });
+  
+  try {
+    if (req.query) {
+      req.query = mongoSanitize.sanitize(req.query, { replaceWith: '_' });
+    }
+  } catch (e) {
+    // Vercel serverless passes req.query as a getter-only property which throws TypeError
+  }
+  
+  next();
+};
 
 /**
  * HTTP Parameter Pollution Protection
