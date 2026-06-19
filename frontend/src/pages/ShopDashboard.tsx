@@ -69,7 +69,7 @@ const ShopDashboard = () => {
     try {
       const { data } = await api.get('/shops/my-shop');
       setShop(data);
-    } catch (err: unknown) { 
+    } catch (err: any) { 
       if (err.response?.status === 404 && user?.role === 'OWNER') {
          navigate('/shop/setup');
       }
@@ -85,12 +85,12 @@ const ShopDashboard = () => {
     } catch (_err) { }
   };
 
-  const updateStats = (data: unknown[]) => {
-    const pending = data.filter((o: unknown) => o.orderStatus === 'QUEUED').length;
-    const printed = data.filter((o: unknown) => o.orderStatus === 'COMPLETED').length;
+  const updateStats = (data: any[]) => {
+    const pending = data.filter((o: any) => o.orderStatus === 'QUEUED').length;
+    const printed = data.filter((o: any) => o.orderStatus === 'COMPLETED').length;
     const revenue = data
-       .filter((o: unknown) => o.orderStatus !== 'CANCELLED')
-       .reduce((sum: number, o: unknown) => sum + (o.totalAmount || 0), 0);
+       .filter((o: any) => o.orderStatus !== 'CANCELLED')
+       .reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
     setStats({ pending, printed, revenue });
   };
 
@@ -133,7 +133,7 @@ const ShopDashboard = () => {
     if (socket && shop) {
       socket.emit('join_shop', shop._id);
       
-      const handleNewOrder = (newOrder: unknown) => {
+      const handleNewOrder = (newOrder: any) => {
         toast(() => (
           <div className="flex items-center gap-2">
             <span className="text-xl">🔔</span>
@@ -151,7 +151,7 @@ const ShopDashboard = () => {
         });
       };
 
-      const handleOrderUpdate = (updatedOrder: unknown) => {
+      const handleOrderUpdate = (updatedOrder: any) => {
          setOrders(prev => {
             const newOrders = prev.map(o => o._id === updatedOrder._id ? updatedOrder : o);
             updateStats(newOrders);
@@ -202,7 +202,7 @@ const ShopDashboard = () => {
       const { data } = await api.put('/shops/status');
       await fetchShopDetails();
       toast.success(data.status === 'OPEN' ? 'Shop is now OPEN' : 'Shop is now CLOSED');
-    } catch (e: unknown) {
+    } catch (e: any) {
       toast.error(e.response?.data?.message || 'Failed to toggle status');
     } finally { setToggling(false); }
   };
@@ -251,7 +251,7 @@ const ShopDashboard = () => {
   // ... (Rest of UI)
 
 
-  const renderSpecs = (config: unknown) => (
+  const renderSpecs = (config: any) => (
       <div className="flex flex-wrap gap-2 mt-1">
         <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border flex items-center gap-1 ${config.color === 'color' ? 'bg-pink-100 text-pink-700 border-pink-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
           <Palette size={10} /> {config.color === 'color' ? 'COLOR' : 'B&W'}
@@ -420,7 +420,7 @@ const ShopDashboard = () => {
                         </td>
                         <td className="p-4">
                           <div className="space-y-3">
-                            {order.items.map((item: unknown, idx: number) => (
+                            {order.items.map((item: any, idx: number) => (
                               <div key={idx} className="flex flex-col gap-1">
                                 <div className="flex items-center gap-2 font-medium text-slate-900 dark:text-slate-100">
                                   <FileText size={16} className="text-slate-600 dark:text-slate-400" />
