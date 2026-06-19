@@ -30,14 +30,14 @@ const getAddressFromCoords = async (lat: number, lng: number) => {
   }
 };
 
-const LocationMarker = ({ setPos, pos, setAddress }: { setPos: unknown, pos: [number, number], setAddress: unknown }) => {
+const LocationMarker = ({ setPos, pos, setAddress }: { setPos: any, pos: [number, number], setAddress: any }) => {
   const map = useMap();
   
   useMapEvents({
     async click(e) {
       setPos([e.latlng.lat, e.latlng.lng]);
       const addr = await getAddressFromCoords(e.latlng.lat, e.latlng.lng);
-      if (addr) setAddress((prev: unknown) => ({ ...prev, address: addr }));
+      if (addr) setAddress((prev: any) => ({ ...prev, address: addr }));
     },
   });
 
@@ -102,7 +102,7 @@ const ShopSetup = () => {
       toast.success("Shop configured successfully!");
       navigate('/shop/dashboard', { replace: true }); 
 
-    } catch (error: unknown) {
+    } catch (error: any) {
       toast.error(error.response?.data?.message || 'Setup failed');
     } finally {
       setLoading(false);

@@ -35,7 +35,7 @@ const ShopHistory = () => {
        // The current `getShopOrders` gets all orders.
        // We will do client-side filtering for search/status for responsiveness on small datasets.
        setOrders(data);
-    } catch (_e) {
+    } catch (e: any) {
        console.error(e);
     } finally {
        setLoading(false);
@@ -150,7 +150,7 @@ const ShopHistory = () => {
                               <td className="p-4 text-sm text-slate-600">
                                  {order.items.length} Files
                                  <div className="text-xs text-slate-400 truncate max-w-[200px]">
-                                    {order.items.map((i: unknown) => i.originalName).join(', ')}
+                                    {order.items.map((i: any) => i.originalName).join(', ')}
                                  </div>
                               </td>
                               <td className="p-4 font-bold text-slate-800">₹{order.totalAmount}</td>

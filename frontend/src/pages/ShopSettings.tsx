@@ -50,17 +50,11 @@ const ShopSettings = () => {
       if (bulk.bwPrice < MIN) errors.push('Bulk B&W');
       if (bulk.colorPrice < MIN) errors.push('Bulk Color');
     }
-    // @ts-expect-error
     if (otherSizes.A3.bw < MIN) errors.push('A3 B&W');
-    // @ts-expect-error
     if (otherSizes.A3.color < MIN) errors.push('A3 Color');
-    // @ts-expect-error
     if (otherSizes.A2.bw < MIN) errors.push('A2 B&W');
-    // @ts-expect-error
     if (otherSizes.A2.color < MIN) errors.push('A2 Color');
-    // @ts-expect-error
     if (otherSizes.A1.bw < MIN) errors.push('A1 B&W');
-    // @ts-expect-error
     if (otherSizes.A1.color < MIN) errors.push('A1 Color');
 
     if (errors.length > 0) {
@@ -248,7 +242,6 @@ const ShopSettings = () => {
                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
                          <input 
                           type="number" step="0.5" min="1" className="input-field pl-6"
-                          // @ts-expect-error
                           value={otherSizes.A3.bw} onChange={e => setOtherSizes({...otherSizes, A3: {...otherSizes.A3, bw: parseFloat(e.target.value)}})}
                          />
                       </div>
@@ -259,7 +252,6 @@ const ShopSettings = () => {
                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
                          <input 
                           type="number" step="0.5" min="1" className="input-field pl-6"
-                          // @ts-expect-error
                           value={otherSizes.A3.color} onChange={e => setOtherSizes({...otherSizes, A3: {...otherSizes.A3, color: parseFloat(e.target.value)}})}
                          />
                       </div>
@@ -277,7 +269,6 @@ const ShopSettings = () => {
                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
                          <input 
                           type="number" step="0.5" min="1" className="input-field pl-6"
-                          // @ts-expect-error
                           value={otherSizes.A2.bw} onChange={e => setOtherSizes({...otherSizes, A2: {...otherSizes.A2, bw: parseFloat(e.target.value)}})}
                          />
                       </div>
@@ -288,7 +279,6 @@ const ShopSettings = () => {
                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
                          <input 
                           type="number" step="0.5" min="1" className="input-field pl-6"
-                          // @ts-expect-error
                           value={otherSizes.A2.color} onChange={e => setOtherSizes({...otherSizes, A2: {...otherSizes.A2, color: parseFloat(e.target.value)}})}
                          />
                       </div>
@@ -306,7 +296,6 @@ const ShopSettings = () => {
                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
                          <input 
                           type="number" step="0.5" min="1" className="input-field pl-6"
-                          // @ts-expect-error
                           value={otherSizes.A1.bw} onChange={e => setOtherSizes({...otherSizes, A1: {...otherSizes.A1, bw: parseFloat(e.target.value)}})}
                          />
                       </div>
@@ -317,7 +306,6 @@ const ShopSettings = () => {
                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
                          <input 
                           type="number" step="0.5" min="1" className="input-field pl-6"
-                          // @ts-expect-error
                           value={otherSizes.A1.color} onChange={e => setOtherSizes({...otherSizes, A1: {...otherSizes.A1, color: parseFloat(e.target.value)}})}
                          />
                       </div>
