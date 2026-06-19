@@ -52,9 +52,6 @@ const FileUpload = ({ onUploadComplete, onProgress, onUploadStart, onUploadEnd, 
     }
   };
 
-  const cancelUpload = () => {
-    cancelledRef.current = true;
-  };
 
   // --- The Upload Logic ---
   const processFiles = async (fileList: FileList) => {

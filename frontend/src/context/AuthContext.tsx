@@ -30,11 +30,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (storedUser && token) {
       try {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setUser(JSON.parse(storedUser));
         console.log('[AuthContext] User restored');
-      } catch (_e) {
+      } catch (e: any) {
         console.error('[AuthContext] Failed to parse user', e);
         sessionStorage.removeItem('user');
         sessionStorage.removeItem('token');

@@ -41,7 +41,7 @@ const QRScanner = ({ onScan, onClose }: ScannerProps) => {
                   await scannerRef.current.stop();
               }
               await scannerRef.current.clear(); 
-          } catch (_e) {
+          } catch (e: any) {
               console.warn("Failed to stop/clear scanner", e);
           }
           scannerRef.current = null;
@@ -50,7 +50,6 @@ const QRScanner = ({ onScan, onClose }: ScannerProps) => {
 
   async function checkInitialPermission() {
     try {
-      // @ts-expect-error - navigator.permissions might have a different type definition
       const permissionStatus = await navigator.permissions.query({ name: 'camera' as any });
       if (permissionStatus.state === 'granted') {
          setIsScanning(true); // This triggers the 2nd useEffect
@@ -86,7 +85,7 @@ const QRScanner = ({ onScan, onClose }: ScannerProps) => {
           },
           () => { /* ignore frame errors */ }
       );
-     } catch (_err) {
+     } catch (err: any) {
         if (!mountedRef.current) return;
         console.error("Camera start error:", err);
         setPermissionDenied(true);
@@ -123,7 +122,7 @@ const QRScanner = ({ onScan, onClose }: ScannerProps) => {
         try {
            const decodedText = await html5QrCode.scanFile(file, true);
            onScan(decodedText);
-        } catch (_err) {
+        } catch (err: any) {
            toast.error("Could not find QR code in image");
         }
      }

@@ -54,7 +54,7 @@ const Login = () => {
          handleRedirect();
       }
 
-    } catch (error: unknown) {
+    } catch (error: any) {
       toast.error(error.response?.data?.message || 'Login failed');
     } finally {
       setLoading(false);
@@ -62,7 +62,7 @@ const Login = () => {
   };
 
   // --- 2. User Login (Real Google Auth) ---
-  const handleGoogleSuccess = async (credentialResponse: unknown) => {
+  const handleGoogleSuccess = async (credentialResponse: any) => {
     setLoading(true);
     try {
       const { credential } = credentialResponse;
@@ -74,7 +74,7 @@ const Login = () => {
       requestLocation(); // Trigger location permission
       handleRedirect();
 
-    } catch (error: unknown) {
+    } catch (error: any) {
       console.error("Google Backend Error:", error);
       toast.error('Authentication Failed. Please try again.');
     } finally {
