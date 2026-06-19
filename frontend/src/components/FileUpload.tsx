@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import api from '../services/api';
 import { UploadCloud, Loader2, AlertCircle } from 'lucide-react';
 
@@ -8,19 +8,23 @@ interface UploadedFile {
   fileHash: string;
   pageCount: number;
   mimeType: string;
-  fileType?: string; // New
+  fileType?: string;
   previewUrl?: string;
 }
 
 interface FileUploadProps {
   onUploadComplete: (files: UploadedFile[]) => void;
+  onProgress?: (current: number, total: number, percent: number) => void;
+  onUploadStart?: () => void;
+  onUploadEnd?: () => void;
   shopId?: string;
 }
 
-const FileUpload = ({ onUploadComplete, shopId }: FileUploadProps) => {
+const FileUpload = ({ onUploadComplete, onProgress, onUploadStart, onUploadEnd, shopId }: FileUploadProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
 
   // --- Drag & Drop Handlers ---
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -40,7 +44,7 @@ const FileUpload = ({ onUploadComplete, shopId }: FileUploadProps) => {
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       await processFiles(e.dataTransfer.files);
     }
-  }, []);
+  }, [shopId]);
 
   const handleManualSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -48,10 +52,16 @@ const FileUpload = ({ onUploadComplete, shopId }: FileUploadProps) => {
     }
   };
 
+  const cancelUpload = () => {
+    cancelledRef.current = true;
+  };
+
   // --- The Upload Logic ---
   const processFiles = async (fileList: FileList) => {
     setUploading(true);
     setError(null);
+    cancelledRef.current = false;
+    onUploadStart?.();
     
     const uploadedFiles: UploadedFile[] = [];
     const files = Array.from(fileList);
@@ -73,11 +83,28 @@ const FileUpload = ({ onUploadComplete, shopId }: FileUploadProps) => {
     const validFiles = files.filter(f => validTypes.includes(f.type));
 
     if (validFiles.length !== files.length) {
-      setError('Some files were skipped. Only PDF, Word, PPT, and Images are supported.');
+      setError('Some files were skipped. Only PDF, Word, PPT, Excel, and Images are supported.');
+    }
+
+    if (validFiles.length === 0) {
+      setUploading(false);
+      onUploadEnd?.();
+      return;
     }
 
     try {
-      for (const file of validFiles) {
+      for (let i = 0; i < validFiles.length; i++) {
+        if (cancelledRef.current) {
+          setError('Upload cancelled.');
+          break;
+        }
+
+        const file = validFiles[i];
+        
+        // Report progress
+        const percent = Math.round(((i) / validFiles.length) * 100);
+        onProgress?.(i, validFiles.length, percent);
+
         const formData = new FormData();
         formData.append('file', file);
         if (shopId) {
@@ -97,18 +124,25 @@ const FileUpload = ({ onUploadComplete, shopId }: FileUploadProps) => {
           fileHash: data.fileHash,
           pageCount: data.pageCount || 1,
           mimeType: file.type,
-          fileType: data.fileType, // Capture from backend
+          fileType: data.fileType,
           previewUrl: objectUrl
         });
+
+        // Report final progress for this file
+        const finalPercent = Math.round(((i + 1) / validFiles.length) * 100);
+        onProgress?.(i + 1, validFiles.length, finalPercent);
       }
 
-      onUploadComplete(uploadedFiles);
+      if (!cancelledRef.current && uploadedFiles.length > 0) {
+        onUploadComplete(uploadedFiles);
+      }
 
     } catch (err) {
       console.error(err);
       setError('Upload failed. Please try again.');
     } finally {
       setUploading(false);
+      onUploadEnd?.();
     }
   };
 
@@ -151,7 +185,7 @@ const FileUpload = ({ onUploadComplete, shopId }: FileUploadProps) => {
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">or click to browse</p>
             
             <div className="flex gap-2 justify-center mt-4 text-xs text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 py-1 px-3 rounded-full border border-slate-200 dark:border-slate-700 w-fit mx-auto">
-              <span>PDF</span><span>DOC</span><span>PPT</span><span>IMG</span>
+              <span>PDF</span><span>DOC</span><span>PPT</span><span>XLS</span><span>IMG</span>
             </div>
           </div>
         )}
@@ -166,4 +200,5 @@ const FileUpload = ({ onUploadComplete, shopId }: FileUploadProps) => {
   );
 };
 
+export { type UploadedFile };
 export default FileUpload;

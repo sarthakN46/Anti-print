@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { Store, ArrowLeft, Loader2 } from 'lucide-react';
+import { Store, ArrowLeft, Loader2, Check, X } from 'lucide-react';
 
 const RegisterShop = () => {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
@@ -13,6 +13,13 @@ const RegisterShop = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const { password } = formData;
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      toast.error('Please meet all password requirements');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -84,11 +91,28 @@ const RegisterShop = () => {
             <input 
               type="password"
               className="input-field" 
-              placeholder="Min. 6 characters"
+              placeholder="Min. 8 characters"
               required
               value={formData.password}
               onChange={e => setFormData({...formData, password: e.target.value})}
             />
+            {/* Password Requirements */}
+            {formData.password && (
+              <div className="mt-2 space-y-1 text-[11px]">
+                <p className={`flex items-center gap-1.5 ${formData.password.length >= 8 ? 'text-green-600' : 'text-slate-400'}`}>
+                  {formData.password.length >= 8 ? <Check size={12} /> : <X size={12} />} At least 8 characters
+                </p>
+                <p className={`flex items-center gap-1.5 ${/[A-Z]/.test(formData.password) ? 'text-green-600' : 'text-slate-400'}`}>
+                  {/[A-Z]/.test(formData.password) ? <Check size={12} /> : <X size={12} />} One uppercase letter
+                </p>
+                <p className={`flex items-center gap-1.5 ${/[0-9]/.test(formData.password) ? 'text-green-600' : 'text-slate-400'}`}>
+                  {/[0-9]/.test(formData.password) ? <Check size={12} /> : <X size={12} />} One number
+                </p>
+                <p className={`flex items-center gap-1.5 ${/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(formData.password) ? 'text-green-600' : 'text-slate-400'}`}>
+                  {/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(formData.password) ? <Check size={12} /> : <X size={12} />} One special character
+                </p>
+              </div>
+            )}
           </div>
 
           <button disabled={loading} className="w-full btn btn-primary font-bold mt-6">

@@ -4,6 +4,9 @@ import User from '../models/User';
 import bcrypt from 'bcryptjs';
 import { AuthRequest } from '../middlewares/authMiddleware';
 import s3, { BUCKET_NAME } from '../config/s3';
+import { validatePassword } from '../middlewares/securityMiddleware';
+
+const BCRYPT_ROUNDS = 12;
 
 // @desc    Register a new shop
 // @route   POST /api/shops
@@ -159,11 +162,25 @@ export const updateShop = async (req: AuthRequest, res: Response): Promise<void>
 
     // Ensure user owns this shop
     if (shop.owner.toString() !== req.user?._id.toString()) {
-      res.status(401).json({ message: 'Not authorized' });
+      res.status(403).json({ message: 'Not authorized' });
       return;
     }
 
-    const updatedShop = await Shop.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // SECURITY: Whitelist allowed fields — prevent overwriting owner, pricing, etc.
+    const ALLOWED_FIELDS = ['name', 'address', 'location', 'image'];
+    const updateData: Record<string, any> = {};
+    for (const field of ALLOWED_FIELDS) {
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      res.status(400).json({ message: 'No valid fields to update' });
+      return;
+    }
+
+    const updatedShop = await Shop.findByIdAndUpdate(req.params.id, updateData, { new: true });
     res.json(updatedShop);
   } catch (error) {
     res.status(500).json({ message: 'Update failed' });
@@ -243,17 +260,49 @@ export const toggleShopStatus = async (req: AuthRequest, res: Response): Promise
 // @access  Private (Owner)
 export const updatePricing = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { bw, color, bulkDiscount } = req.body;
+    const { bw, color, bulkDiscount, otherSizes } = req.body;
+
+    // Validate minimum ₹1 for all price fields
+    const MIN_PRICE = 1;
+    const priceErrors: string[] = [];
+
+    if (bw) {
+      if (bw.single < MIN_PRICE) priceErrors.push(`B&W Single (₹${bw.single})`);
+      if (bw.double < MIN_PRICE) priceErrors.push(`B&W Double (₹${bw.double})`);
+    }
+    if (color) {
+      if (color.single < MIN_PRICE) priceErrors.push(`Color Single (₹${color.single})`);
+      if (color.double < MIN_PRICE) priceErrors.push(`Color Double (₹${color.double})`);
+    }
+    if (bulkDiscount && bulkDiscount.enabled) {
+      if (bulkDiscount.bwPrice < MIN_PRICE) priceErrors.push(`Bulk B&W (₹${bulkDiscount.bwPrice})`);
+      if (bulkDiscount.colorPrice < MIN_PRICE) priceErrors.push(`Bulk Color (₹${bulkDiscount.colorPrice})`);
+    }
+    if (otherSizes) {
+      for (const size of ['A3', 'A2', 'A1']) {
+        if (otherSizes[size]) {
+          if (otherSizes[size].bw < MIN_PRICE) priceErrors.push(`${size} B&W (₹${otherSizes[size].bw})`);
+          if (otherSizes[size].color < MIN_PRICE) priceErrors.push(`${size} Color (₹${otherSizes[size].color})`);
+        }
+      }
+    }
+
+    if (priceErrors.length > 0) {
+      res.status(400).json({ 
+        message: `All prices must be at least ₹${MIN_PRICE}. Invalid: ${priceErrors.join(', ')}` 
+      });
+      return;
+    }
+
+    const updateFields: any = {};
+    if (bw) updateFields['pricing.bw'] = bw;
+    if (color) updateFields['pricing.color'] = color;
+    if (bulkDiscount) updateFields['pricing.bulkDiscount'] = bulkDiscount;
+    if (otherSizes) updateFields['pricing.otherSizes'] = otherSizes;
 
     const updatedShop = await Shop.findOneAndUpdate(
       { owner: req.user?._id },
-      { 
-        $set: { 
-          'pricing.bw': bw, 
-          'pricing.color': color,
-          'pricing.bulkDiscount': bulkDiscount
-        } 
-      },
+      { $set: updateFields },
       { new: true }
     );
 
@@ -275,7 +324,22 @@ export const updatePricing = async (req: AuthRequest, res: Response): Promise<vo
 export const addEmployee = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      res.status(400).json({ message: 'Name, email, and password are required' });
+      return;
+    }
     
+    // Password strength validation
+    const passwordCheck = validatePassword(password);
+    if (!passwordCheck.valid) {
+      res.status(400).json({ 
+        message: 'Password too weak', 
+        requirements: passwordCheck.errors 
+      });
+      return;
+    }
+
     // 1. Find the owner's shop
     const shop = await Shop.findOne({ owner: req.user?._id });
     if (!shop) {
@@ -284,19 +348,19 @@ export const addEmployee = async (req: AuthRequest, res: Response): Promise<void
     }
 
     // 2. Check if user exists
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findOne({ email: email.toLowerCase().trim() });
     if (userExists) {
       res.status(400).json({ message: 'User already exists' });
       return;
     }
 
-    // 3. Create Employee User
-    const salt = await bcrypt.genSalt(10);
+    // 3. Create Employee User (increased bcrypt rounds)
+    const salt = await bcrypt.genSalt(BCRYPT_ROUNDS);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const employee = await User.create({
-      name,
-      email,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
       password: hashedPassword,
       role: 'EMPLOYEE',
       associatedShop: shop._id
@@ -312,7 +376,7 @@ export const addEmployee = async (req: AuthRequest, res: Response): Promise<void
     });
 
   } catch (error) {
-    console.error(error);
+    console.error('Employee creation error');
     res.status(500).json({ message: 'Failed to add employee' });
   }
 };

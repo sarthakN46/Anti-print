@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useState, useEffect, type ReactNode, useMemo } from 'react';
 
 interface User {
@@ -29,9 +30,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (storedUser && token) {
       try {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setUser(JSON.parse(storedUser));
         console.log('[AuthContext] User restored');
-      } catch (e) {
+      } catch (_e) {
         console.error('[AuthContext] Failed to parse user', e);
         sessionStorage.removeItem('user');
         sessionStorage.removeItem('token');

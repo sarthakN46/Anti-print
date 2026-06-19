@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { ArrowRight, Loader2, Store } from 'lucide-react';
+import { ArrowRight, Loader2, Store, Check, X } from 'lucide-react';
 
 const RegisterUser = () => {
   const [name, setName] = useState('');
@@ -16,6 +16,13 @@ const RegisterUser = () => {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Frontend validation
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      toast.error('Please meet all password requirements');
+      return;
+    }
+
     setLoading(true);
     
     try {
@@ -112,6 +119,23 @@ const RegisterUser = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
+              {/* Password Requirements */}
+              {password && (
+                <div className="mt-2 space-y-1 text-[11px]">
+                  <p className={`flex items-center gap-1.5 ${password.length >= 8 ? 'text-green-600' : 'text-slate-400'}`}>
+                    {password.length >= 8 ? <Check size={12} /> : <X size={12} />} At least 8 characters
+                  </p>
+                  <p className={`flex items-center gap-1.5 ${/[A-Z]/.test(password) ? 'text-green-600' : 'text-slate-400'}`}>
+                    {/[A-Z]/.test(password) ? <Check size={12} /> : <X size={12} />} One uppercase letter
+                  </p>
+                  <p className={`flex items-center gap-1.5 ${/[0-9]/.test(password) ? 'text-green-600' : 'text-slate-400'}`}>
+                    {/[0-9]/.test(password) ? <Check size={12} /> : <X size={12} />} One number
+                  </p>
+                  <p className={`flex items-center gap-1.5 ${/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) ? 'text-green-600' : 'text-slate-400'}`}>
+                    {/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) ? <Check size={12} /> : <X size={12} />} One special character
+                  </p>
+                </div>
+              )}
             </div>
 
             <button 

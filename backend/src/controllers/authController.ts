@@ -3,12 +3,15 @@ import bcrypt from 'bcryptjs';
 import User from '../models/User';
 import generateToken from '../utils/generateToken';
 import { OAuth2Client } from 'google-auth-library';
+import { validatePassword } from '../middlewares/securityMiddleware';
 
 import Shop from '../models/Shop';
 
 // Allow using the same VITE_ variable for backend convenience, or standard GOOGLE_CLIENT_ID
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
 const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+
+const BCRYPT_ROUNDS = 12; // Increased from 10 for stronger hashing
 
 // @desc    Register a new User
 // @route   POST /api/auth/register-user
@@ -23,6 +26,12 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       return;
     }
     
+    // Name sanitization (prevent XSS via stored names)
+    if (typeof name !== 'string' || name.length > 100) {
+      res.status(400).json({ message: 'Name must be 1-100 characters' });
+      return;
+    }
+
     // Email Regex
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -30,27 +39,31 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
        return;
     }
 
-    // Password Strength
-    if (password.length < 6) {
-       res.status(400).json({ message: 'Password must be at least 6 characters long' });
+    // Password Strength (hardened)
+    const passwordCheck = validatePassword(password);
+    if (!passwordCheck.valid) {
+       res.status(400).json({ 
+         message: 'Password too weak',
+         requirements: passwordCheck.errors
+       });
        return;
     }
 
     // 2. Check if user exists
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findOne({ email: email.toLowerCase().trim() });
     if (userExists) {
       res.status(400).json({ message: 'User already exists' });
       return;
     }
 
-    // 3. Hash password
-    const salt = await bcrypt.genSalt(10);
+    // 3. Hash password (increased salt rounds)
+    const salt = await bcrypt.genSalt(BCRYPT_ROUNDS);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // 4. Create User (Role: USER)
     const user = await User.create({
-      name,
-      email,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
       password: hashedPassword,
       role: 'USER'
     });
@@ -69,7 +82,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       res.status(400).json({ message: 'Invalid user data' });
     }
   } catch (error) {
-    console.error(error);
+    console.error('Registration error');
     res.status(500).json({ message: 'Server Error' });
   }
 };
@@ -87,6 +100,11 @@ export const registerShopOwner = async (req: Request, res: Response): Promise<vo
       return;
     }
 
+    if (typeof name !== 'string' || name.length > 100) {
+      res.status(400).json({ message: 'Name must be 1-100 characters' });
+      return;
+    }
+
     // Email Regex
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -94,14 +112,18 @@ export const registerShopOwner = async (req: Request, res: Response): Promise<vo
        return;
     }
 
-    // Password Strength
-    if (password.length < 6) {
-       res.status(400).json({ message: 'Password must be at least 6 characters long' });
+    // Password Strength (hardened)
+    const passwordCheck = validatePassword(password);
+    if (!passwordCheck.valid) {
+       res.status(400).json({ 
+         message: 'Password too weak',
+         requirements: passwordCheck.errors
+       });
        return;
     }
 
     // 2. Check if user exists
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findOne({ email: email.toLowerCase().trim() });
     if (userExists) {
       // Check if this user has completed shop setup
       const existingShop = await Shop.findOne({ owner: userExists._id });
@@ -116,14 +138,14 @@ export const registerShopOwner = async (req: Request, res: Response): Promise<vo
       await User.deleteOne({ _id: userExists._id });
     }
 
-    // 3. Hash password
-    const salt = await bcrypt.genSalt(10);
+    // 3. Hash password (increased salt rounds)
+    const salt = await bcrypt.genSalt(BCRYPT_ROUNDS);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // 4. Create User (Role: OWNER)
     const user = await User.create({
-      name,
-      email,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
       password: hashedPassword,
       role: 'OWNER'
     });
@@ -141,7 +163,7 @@ export const registerShopOwner = async (req: Request, res: Response): Promise<vo
       res.status(400).json({ message: 'Invalid user data' });
     }
   } catch (error) {
-    console.error(error);
+    console.error('Shop registration error');
     res.status(500).json({ message: 'Server Error' });
   }
 };
@@ -153,10 +175,15 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
-    // 1. Find user by email (Explicitly select password because we hid it in Model)
-    const user = await User.findOne({ email }).select('+password');
+    if (!email || !password) {
+      res.status(400).json({ message: 'Email and password are required' });
+      return;
+    }
 
-    // 2. Check password
+    // 1. Find user by email (Explicitly select password because we hid it in Model)
+    const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password');
+
+    // 2. Check password — use constant-time comparison message to prevent user enumeration
     if (user && user.password && (await bcrypt.compare(password, user.password))) {
       const token = generateToken(res, user._id.toString());
       
@@ -168,10 +195,11 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
         token: token 
       });
     } else {
+      // Generic message prevents user enumeration attacks
       res.status(401).json({ message: 'Invalid email or password' });
     }
   } catch (error) {
-    console.error(error);
+    console.error('Login error');
     res.status(500).json({ message: 'Server Error' });
   }
 };
@@ -183,7 +211,7 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
   try {
     const { credential } = req.body; // The JWT token from Google
 
-    if (!credential) {
+    if (!credential || typeof credential !== 'string') {
        res.status(400).json({ message: 'No credential provided' });
        return;
     }
@@ -208,13 +236,13 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
     }
 
     // 2. Check if user exists
-    let user = await User.findOne({ email });
+    let user = await User.findOne({ email: email.toLowerCase().trim() });
 
     if (!user) {
       // 3. Register new user automatically
       user = await User.create({
         name: name || 'User',
-        email,
+        email: email.toLowerCase().trim(),
         googleId,
         role: 'USER'
       });
@@ -232,7 +260,7 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
     });
 
   } catch (error) {
-    console.error('Google Auth Error:', error);
+    console.error('Google Auth Error');
     res.status(400).json({ message: 'Google Authentication Failed' });
   }
 };

@@ -1,31 +1,23 @@
-import { useState, useContext, useEffect } from 'react';
+import { useState, useContext, useEffect, useRef } from 'react';
 import api from '../services/api';
 import { AuthContext } from '../context/AuthContext';
 import FileUpload from '../components/FileUpload';
+import UploadProgressModal from '../components/UploadProgressModal';
+import DocumentConfigurator from '../components/DocumentConfigurator';
+import CartPage from '../components/CartPage';
 import QRScanner from '../components/QRScanner';
 import toast from 'react-hot-toast';
-import { Store, ShoppingCart, LogOut, FileText, Trash2, Eye, MapPin, ArrowRight, Loader2, Info, QrCode, X, ArrowLeft, Clock, List, Map as MapIcon, CheckCircle, HelpCircle } from 'lucide-react';
+import { Store, LogOut, FileText, MapPin, ArrowRight, Loader2, Info, QrCode, X, ArrowLeft, Clock, List, Map as MapIcon, CheckCircle, HelpCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { io } from 'socket.io-client';
+import type { ConfiguratorItem } from '../components/DocumentConfigurator';
+import type { UploadedFile } from '../components/FileUpload';
 
-interface CartItem {
-  storageKey: string;
-  originalName: string;
-  fileHash: string;
-  pageCount: number;
-  previewUrl?: string;
-  fileType?: string; // To track if it is pptx
-  config: {
-    color: 'bw' | 'color';
-    side: 'single' | 'double';
-    copies: number;
-    pageRange: string;
-    orientation: 'portrait' | 'landscape';
-    paperSize: 'A4' | 'A3' | 'A2' | 'A1';
-  };
-}
+// Cart persistence key
+const CART_STORAGE_KEY = 'xerox_cart';
+const SHOP_STORAGE_KEY = 'xerox_selected_shop';
 
 const UserDashboard = () => {
   const { user, logout } = useContext(AuthContext)!;
@@ -35,16 +27,86 @@ const UserDashboard = () => {
   const [loadingShops, setLoadingShops] = useState(true);
   const [selectedShop, setSelectedShop] = useState<any>(null);
 
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // Multi-step flow: 'upload' | 'configure' | 'cart'
+  const [step, setStep] = useState<'upload' | 'configure' | 'cart'>('upload');
+
+  // Items being configured (before adding to cart)
+  const [configuringItems, setConfiguringItems] = useState<ConfiguratorItem[]>([]);
+
+  // Final cart items (after "Add to Cart")
+  const [cart, setCart] = useState<ConfiguratorItem[]>([]);
+
   const [showScanner, setShowScanner] = useState(false);
   const [showOrdersModal, setShowOrdersModal] = useState(false);
   const [showMap, setShowMap] = useState(false);
-  const [showMobileCart, setShowMobileCart] = useState(false);
   const [myOrders, setMyOrders] = useState<any[]>([]);
   
+  // Upload progress state
+  const [showUploadProgress, setShowUploadProgress] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, percent: 0 });
+
   // Notification Modal State
   const [completedOrder, setCompletedOrder] = useState<any>(null);
   const [refundNotification, setRefundNotification] = useState<any>(null);
+
+  // File input ref for "Add files" in configurator
+  const addFilesInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Cart Persistence ---
+  // Load cart from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedCart = localStorage.getItem(CART_STORAGE_KEY);
+      const savedShop = localStorage.getItem(SHOP_STORAGE_KEY);
+      if (savedCart) {
+        const parsed = JSON.parse(savedCart);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCart(parsed);
+        }
+      }
+      if (savedShop) {
+        const parsedShop = JSON.parse(savedShop);
+        if (parsedShop && parsedShop._id) {
+          setSelectedShop(parsedShop);
+        }
+      }
+    } catch (e) {
+      // Silently ignore corrupted data
+      localStorage.removeItem(CART_STORAGE_KEY);
+      localStorage.removeItem(SHOP_STORAGE_KEY);
+    }
+  }, []);
+
+  // Save cart to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      if (cart.length > 0) {
+        // Strip previewUrl before saving (can't persist blob URLs)
+        const cartToSave = cart.map(item => ({
+          ...item,
+          previewUrl: undefined,
+        }));
+        localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartToSave));
+      } else {
+        localStorage.removeItem(CART_STORAGE_KEY);
+      }
+    } catch (e) {
+      // Silently ignore
+    }
+  }, [cart]);
+
+  // Save selected shop to localStorage
+  useEffect(() => {
+    try {
+      if (selectedShop) {
+        localStorage.setItem(SHOP_STORAGE_KEY, JSON.stringify(selectedShop));
+      } else {
+        localStorage.removeItem(SHOP_STORAGE_KEY);
+      }
+    } catch (e) {
+      // Silently ignore
+    }
+  }, [selectedShop]);
 
   // Calculate Distance (Haversine Formula)
   const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -58,8 +120,6 @@ const UserDashboard = () => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
-
-  // --- MISSING FUNCTIONS RESTORED ---
 
   const loadRazorpay = () => {
     return new Promise((resolve) => {
@@ -75,7 +135,6 @@ const UserDashboard = () => {
     try {
       const { data } = await api.get('/shops');
       
-      // Calculate distances if user geolocation is available
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (position) => {
@@ -87,13 +146,11 @@ const UserDashboard = () => {
                }
                return { ...shop, distance: 9999 };
             });
-            // Sort by distance
             setShops(shopsWithDistance.sort((a: any, b: any) => a.distance - b.distance));
             setLoadingShops(false);
           },
-          (err) => {
-            console.error("Loc Error", err);
-            setShops(data); // Fallback without distance
+          (_err) => {
+            setShops(data);
             setLoadingShops(false);
           }
         );
@@ -101,8 +158,7 @@ const UserDashboard = () => {
         setShops(data);
         setLoadingShops(false);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (_err) {
       toast.error('Failed to load shops');
       setLoadingShops(false);
     }
@@ -110,9 +166,9 @@ const UserDashboard = () => {
 
   const fetchOrders = async () => {
      try {
-        const { data } = await api.get('/orders/my'); // Corrected route
+        const { data } = await api.get('/orders/my');
         setMyOrders(data);
-     } catch (error) {
+     } catch (_error) {
         console.error("Failed to fetch orders");
      }
   };
@@ -120,72 +176,198 @@ const UserDashboard = () => {
   useEffect(() => {
     fetchShops();
     fetchOrders();
-    // Poll for orders every 30s
     const interval = setInterval(fetchOrders, 30000);
     return () => clearInterval(interval);
   }, []);
 
   const handleSelectShop = (shop: any) => {
     setSelectedShop(shop);
-    setCart([]); // Clear cart when switching shops
+    setStep('upload');
+    setConfiguringItems([]);
+    // Don't clear cart — persist across shop changes only if same shop
+    // But clear if different shop
+    if (cart.length > 0) {
+      const existingShopId = localStorage.getItem(SHOP_STORAGE_KEY);
+      try {
+        const parsed = existingShopId ? JSON.parse(existingShopId) : null;
+        if (parsed?._id !== shop._id) {
+          setCart([]);
+        }
+      } catch {
+        setCart([]);
+      }
+    }
   };
 
   const handleClearShop = () => {
     setSelectedShop(null);
     setCart([]);
+    setConfiguringItems([]);
+    setStep('upload');
+    localStorage.removeItem(CART_STORAGE_KEY);
+    localStorage.removeItem(SHOP_STORAGE_KEY);
   };
 
-  const handleUploadComplete = (files: any[]) => {
-    const newItems: CartItem[] = files.map(fileData => ({
+  // --- Upload Handlers ---
+  const handleUploadComplete = (files: UploadedFile[]) => {
+    const newItems: ConfiguratorItem[] = files.map(fileData => ({
         storageKey: fileData.storageKey,
         originalName: fileData.originalName,
         fileHash: fileData.fileHash,
         pageCount: fileData.pageCount || 1,
         previewUrl: fileData.previewUrl,
-        fileType: fileData.mimeType,
+        fileType: fileData.fileType,
+        mimeType: fileData.mimeType,
         config: {
-          color: 'bw' as 'bw',
-          side: 'single' as 'single',
+          color: 'bw' as const,
+          side: 'single' as const,
           copies: 1,
           pageRange: 'All',
-          orientation: 'portrait' as 'portrait',
-          paperSize: 'A4' as 'A4'
+          orientation: 'portrait' as const,
+          paperSize: 'A4' as const
         }
     }));
     
-    setCart(prev => [...prev, ...newItems]);
-    toast.success(`${files.length} file(s) added to cart`);
+    setConfiguringItems(prev => [...prev, ...newItems]);
+    setStep('configure');
+    setShowUploadProgress(false);
+    toast.success(`${files.length} file(s) ready to configure`);
   };
 
-  const updateConfig = (index: number, key: string, value: any) => {
-    const newCart = [...cart];
-    newCart[index].config = { ...newCart[index].config, [key]: value };
-    setCart(newCart);
+  const handleUploadProgress = (current: number, total: number, percent: number) => {
+    setUploadProgress({ current, total, percent });
+  };
+
+  const handleUploadStart = () => {
+    setShowUploadProgress(true);
+    setUploadProgress({ current: 0, total: 0, percent: 0 });
+  };
+
+  const handleUploadEnd = () => {
+    // Small delay so user sees 100%
+    setTimeout(() => {
+      setShowUploadProgress(false);
+    }, 500);
+  };
+
+  // --- Configurator Handlers ---
+  const handleAddToCart = (configuredItems: ConfiguratorItem[]) => {
+    setCart(prev => [...prev, ...configuredItems]);
+    setConfiguringItems([]);
+    setStep('cart');
+    toast.success(`${configuredItems.length} item(s) added to cart`);
+  };
+
+  const handleRemoveFromCart = (index: number) => {
+    setCart(prev => {
+      const updated = [...prev];
+      updated.splice(index, 1);
+      return updated;
+    });
+  };
+
+  const handleRemoveConfiguringItem = (index: number) => {
+    setConfiguringItems(prev => {
+      const updated = [...prev];
+      updated.splice(index, 1);
+      if (updated.length === 0) {
+        setStep('upload');
+      }
+      return updated;
+    });
+  };
+
+  // Hidden file input for "Add files" from configurator
+  const handleAddFilesFromConfigurator = () => {
+    addFilesInputRef.current?.click();
+  };
+
+  const handleAdditionalFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    
+    const files = Array.from(e.target.files);
+    const validTypes = [
+      'application/pdf', 'application/msword', 
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/csv', 'image/png', 'image/jpeg'
+    ];
+    const validFiles = files.filter(f => validTypes.includes(f.type));
+    if (validFiles.length === 0) {
+      toast.error('No supported files selected');
+      return;
+    }
+
+    setShowUploadProgress(true);
+    setUploadProgress({ current: 0, total: validFiles.length, percent: 0 });
+
+    try {
+      for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i];
+        setUploadProgress({ current: i, total: validFiles.length, percent: Math.round((i / validFiles.length) * 100) });
+
+        const formData = new FormData();
+        formData.append('file', file);
+        if (selectedShop?._id) formData.append('shopId', selectedShop._id);
+
+        const { data } = await api.post('/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+
+        const objectUrl = URL.createObjectURL(file);
+
+        const newItem: ConfiguratorItem = {
+          storageKey: data.storageKey,
+          originalName: data.originalName,
+          fileHash: data.fileHash,
+          pageCount: data.pageCount || 1,
+          previewUrl: objectUrl,
+          fileType: data.fileType,
+          mimeType: file.type,
+          config: {
+            color: 'bw', side: 'single', copies: 1,
+            pageRange: 'All', orientation: 'portrait', paperSize: 'A4'
+          }
+        };
+
+        setConfiguringItems(prev => [...prev, newItem]);
+        setUploadProgress({ current: i + 1, total: validFiles.length, percent: Math.round(((i + 1) / validFiles.length) * 100) });
+      }
+      toast.success(`${validFiles.length} file(s) added`);
+    } catch (_err) {
+      toast.error('Failed to upload additional files');
+    } finally {
+      setShowUploadProgress(false);
+      e.target.value = '';
+    }
   };
 
   const calculateTotal = () => {
     if (!selectedShop) return 0;
     return cart.reduce((total, item) => {
-      // Determine base rate object (BW vs Color)
-      const rateObj = item.config.color === 'bw' 
-        ? selectedShop.pricing.bw 
-        : selectedShop.pricing.color;
-      
-      // Determine specific rate (Single vs Double)
-      // If 1 page, always force single rate even if double selected (safety)
-      const isDouble = item.config.side === 'double' && item.pageCount > 1;
-      const rate = isDouble ? rateObj.double : rateObj.single;
+      const size = item.config.paperSize;
+      const isColor = item.config.color === 'color';
+      const isDouble = item.config.side === 'double';
 
+      let rate = 0;
+      if (size !== 'A4' && selectedShop.pricing?.otherSizes?.[size]) {
+        const sizeP = selectedShop.pricing.otherSizes[size];
+        rate = isColor ? sizeP.color : sizeP.bw;
+      } else if (isColor) {
+        rate = isDouble ? selectedShop.pricing?.color?.double : selectedShop.pricing?.color?.single;
+      } else {
+        rate = isDouble ? selectedShop.pricing?.bw?.double : selectedShop.pricing?.bw?.single;
+      }
       return total + (rate * item.pageCount * item.config.copies);
     }, 0);
   };
 
   const handleScanResult = async (result: string) => {
-     // Expected format: "SHOP:shop_id_here"
      if (result.startsWith("SHOP:")) {
         const shopId = result.split(":")[1];
-        
-        // 1. Try to find in local list
         const foundShop = shops.find(s => s._id === shopId);
         
         if (foundShop) {
@@ -198,13 +380,9 @@ const UserDashboard = () => {
            setShowScanner(false);
            toast.success(`Joined ${foundShop.name}`);
         } else {
-           // 2. If not found (e.g. shop list limited by distance), fetch specific shop
            try {
               toast.loading("Fetching shop details...");
               const { data: shop } = await api.get(`/shops/qr/${shopId}`);
-              
-              console.log("[QR Scan] Fetched Shop:", shop); // Debug
-
               toast.dismiss();
               if (shop) {
                  const status = shop.status?.toUpperCase();
@@ -219,7 +397,7 @@ const UserDashboard = () => {
               } else {
                  toast.error('Shop not found');
               }
-           } catch(e) {
+           } catch (_e) {
               toast.dismiss();
               toast.error('Could not find shop. It might be closed.');
            }
@@ -229,22 +407,21 @@ const UserDashboard = () => {
 
   const handleCancelOrder = async (orderId: string) => {
      if(!window.confirm('Are you sure you want to cancel this order? Refund will be initiated.')) return;
-     
      try {
         await api.put(`/orders/${orderId}/cancel`);
         toast.success('Cancellation request sent');
         fetchOrders();
-     } catch (error) {
+     } catch (_error) {
         toast.error('Failed to cancel order');
      }
   };
 
   // Socket Listener for Notifications
   useEffect(() => {
-    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
-
+    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
+      auth: { token: sessionStorage.getItem('token') },
+    });
     socket.emit('join_user', user?._id);
-
 
      socket.on('notification', (data: any) => {
         if (data.type === 'error') toast.error(data.message, { duration: 5000 });
@@ -252,7 +429,6 @@ const UserDashboard = () => {
      });
 
      const handleOrderUpdate = (updatedOrder: any) => {
-        // 1. Check if this order belongs to the logged-in user
         const orderUserId = typeof updatedOrder.user === 'string' ? updatedOrder.user : updatedOrder.user?._id;
         
         if (user && orderUserId === user._id) {
@@ -267,7 +443,6 @@ const UserDashboard = () => {
             }
         }
 
-        // 2. Update the list if it exists
         setMyOrders(prev => {
            const exists = prev.find(o => o._id === updatedOrder._id);
            if (exists) {
@@ -283,41 +458,53 @@ const UserDashboard = () => {
      return () => { socket.disconnect(); };
   }, [user]);
 
-  // ... (rest of code)
-
+  // --- CHECKOUT (Razorpay) ---
   const handleCheckout = async () => {
     if (cart.length === 0 || !selectedShop) return;
     
+    const total = calculateTotal();
+    if (total < 1) {
+      toast.error('Order total must be at least ₹1');
+      return;
+    }
+
     const res = await loadRazorpay();
     if (!res) {
       toast.error('Razorpay SDK failed to load. Are you online?');
       return;
     }
 
-    // Map cart items to match Backend Schema
     const orderItems = cart.map(item => {
-       const rate = item.config.color === 'bw' 
-          ? selectedShop.pricing.bw.single 
-          : selectedShop.pricing.color.single;
+       const size = item.config.paperSize;
+       const isColor = item.config.color === 'color';
+       const isDouble = item.config.side === 'double';
+
+       let rate = 0;
+       if (size !== 'A4' && selectedShop.pricing?.otherSizes?.[size]) {
+         const sizeP = selectedShop.pricing.otherSizes[size];
+         rate = isColor ? sizeP.color : sizeP.bw;
+       } else if (isColor) {
+         rate = isDouble ? selectedShop.pricing?.color?.double : selectedShop.pricing?.color?.single;
+       } else {
+         rate = isDouble ? selectedShop.pricing?.bw?.double : selectedShop.pricing?.bw?.single;
+       }
        const cost = rate * item.pageCount * item.config.copies;
        
        return {
           ...item,
-          calculatedCost: cost // <--- Added missing field
+          previewUrl: undefined, // Don't send blob URLs to server
+          calculatedCost: cost
        };
     });
 
     try {
-      // 1. Create Order in Backend
       const { data: order } = await api.post('/orders', {
         shopId: selectedShop._id,
-        items: orderItems // <--- Send the mapped items
+        items: orderItems
       });
 
-      // 2. Init Payment in Backend
       const { data: paymentOrder } = await api.post('/orders/checkout', { orderId: order._id });
 
-      // 3. Open Razorpay Options
       const options = {
         key: paymentOrder.keyId, 
         amount: paymentOrder.amount,
@@ -325,7 +512,6 @@ const UserDashboard = () => {
         name: "XeroxSaaS",
         description: `Print Order #${order._id.slice(-4)}`,
         order_id: paymentOrder.id,
-        // Handle Success
         handler: async function (response: any) {
            try {
               const verifyRes = await api.post('/orders/verify', {
@@ -336,21 +522,22 @@ const UserDashboard = () => {
               });
               
               if(verifyRes.data.status === 'success'){
-                 toast.success('Payment Successful!');
+                 toast.success('Payment Successful! Order sent to shop.');
                  setCart([]);
-                 setShowMobileCart(false);
+                 setStep('upload');
+                 localStorage.removeItem(CART_STORAGE_KEY);
+                 fetchOrders();
               }
-           } catch (err) {
+           } catch (_err) {
               toast.error('Payment Verification Failed');
            }
         },
-        // Handle Dismissal (User closes popup)
         modal: {
           ondismiss: async function() {
              toast.error('Payment Cancelled');
              try {
                 await api.put(`/orders/${order._id}/cancel`);
-             } catch(e) { console.error('Failed to cancel order'); }
+             } catch (_e) { console.error('Failed to cancel order'); }
           }
         },
         prefill: {
@@ -358,23 +545,22 @@ const UserDashboard = () => {
           email: user?.email,
         },
         theme: {
-          color: "#3399cc"
+          color: "#16a34a"
         }
       };
 
       const paymentObject = new (window as any).Razorpay(options);
       
-      // Handle Failure (e.g. Bank failure)
       paymentObject.on('payment.failed', async function (response: any){
           toast.error(response.error.description);
           try {
              await api.put(`/orders/${order._id}/cancel`); 
-          } catch(e) { console.error('Failed to cancel order'); }
+          } catch (_e) { console.error('Failed to cancel order'); }
       });
 
       paymentObject.open();
 
-    } catch (err: any) {
+    } catch (_err) {
       toast.error('Order processing failed');
     }
   };
@@ -479,7 +665,6 @@ const UserDashboard = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                 {shops.map(shop => (
                 <div key={shop._id} className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer group" onClick={() => handleSelectShop(shop)}>
-                  {/* Shop Image */}
                   {shop.image ? (
                      <div className="h-28 sm:h-32 w-full bg-cover bg-center rounded-xl mb-3 sm:mb-4" style={{backgroundImage: `url(${shop.image})`}} />
                   ) : (
@@ -574,23 +759,20 @@ const UserDashboard = () => {
               </div>
            </div>
         )}
+
         {/* Completion Modal */}
         {completedOrder && (
            <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
               <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center animate-in fade-in zoom-in shadow-2xl relative overflow-hidden">
-                 {/* Confetti Background Effect (Optional/Simple) */}
                  <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-green-300 via-transparent to-transparent pointer-events-none" />
-
                  <div className="mx-auto w-20 h-20 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mb-6 animate-bounce">
                     <CheckCircle size={40} className="text-green-600 dark:text-green-400" />
                  </div>
-                 
                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Order Completed!</h2>
                  <p className="text-slate-500 dark:text-slate-400 mb-6">
                     Your order <span className="font-mono font-bold text-slate-800 dark:text-slate-200">#{completedOrder._id.slice(-4)}</span> has been fulfilled.
                     <br/>Thank you for printing with us!
                  </p>
-
                  <button 
                     onClick={() => setCompletedOrder(null)} 
                     className="w-full btn btn-primary py-3 text-lg font-bold shadow-lg hover:shadow-green-500/20"
@@ -604,7 +786,126 @@ const UserDashboard = () => {
     );
   }
 
-  // --- VIEW 2: DASHBOARD (Shop Selected) ---
+  // --- VIEW 2: SHOP SELECTED — MULTI-STEP FLOW ---
+
+  // Step: Configure
+  if (step === 'configure' && configuringItems.length > 0) {
+    return (
+      <>
+        <DocumentConfigurator
+          items={configuringItems}
+          shopPricing={selectedShop.pricing}
+          onBack={() => {
+            if (configuringItems.length > 0) {
+              if (window.confirm('Go back? Your current configuration will be lost.')) {
+                setConfiguringItems([]);
+                setStep('upload');
+              }
+            } else {
+              setStep('upload');
+            }
+          }}
+          onAddFiles={handleAddFilesFromConfigurator}
+          onAddToCart={handleAddToCart}
+          onRemoveItem={handleRemoveConfiguringItem}
+          onUpdateItems={setConfiguringItems}
+        />
+        {/* Hidden file input for adding files from configurator */}
+        <input
+          ref={addFilesInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.png,.jpg,.jpeg"
+          onChange={handleAdditionalFiles}
+        />
+        {/* Upload progress overlay */}
+        {showUploadProgress && (
+          <UploadProgressModal
+            current={uploadProgress.current}
+            total={uploadProgress.total}
+            percent={uploadProgress.percent}
+            onCancel={() => setShowUploadProgress(false)}
+          />
+        )}
+        {/* Completion Modal */}
+        {completedOrder && (
+           <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+                 <div className="mx-auto w-20 h-20 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mb-6 animate-bounce">
+                    <CheckCircle size={40} className="text-green-600 dark:text-green-400" />
+                 </div>
+                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Order Completed!</h2>
+                 <p className="text-slate-500 dark:text-slate-400 mb-6">
+                    Your order <span className="font-mono font-bold">#{completedOrder._id.slice(-4)}</span> has been fulfilled.
+                 </p>
+                 <button onClick={() => setCompletedOrder(null)} className="w-full btn btn-primary py-3 text-lg font-bold">Awesome!</button>
+              </div>
+           </div>
+        )}
+        {refundNotification && (
+           <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+                 <div className="mx-auto w-20 h-20 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mb-6">
+                    <Info size={40} className="text-red-600 dark:text-red-400" />
+                 </div>
+                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Refund Initiated</h2>
+                 <p className="text-slate-500 dark:text-slate-400 mb-6">
+                    Order <span className="font-mono font-bold">#{refundNotification._id.slice(-4)}</span> was cancelled. Refund processed.
+                 </p>
+                 <button onClick={() => setRefundNotification(null)} className="w-full btn btn-outline py-3 text-lg font-bold">Close</button>
+              </div>
+           </div>
+        )}
+      </>
+    );
+  }
+
+  // Step: Cart
+  if (step === 'cart') {
+    return (
+      <>
+        <CartPage
+          items={cart}
+          shopName={selectedShop.name}
+          shopPricing={selectedShop.pricing}
+          onBack={() => setStep('upload')}
+          onRemoveItem={handleRemoveFromCart}
+          onConfirmPay={handleCheckout}
+        />
+        {completedOrder && (
+           <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+                 <div className="mx-auto w-20 h-20 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mb-6 animate-bounce">
+                    <CheckCircle size={40} className="text-green-600 dark:text-green-400" />
+                 </div>
+                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Order Completed!</h2>
+                 <p className="text-slate-500 dark:text-slate-400 mb-6">
+                    Your order <span className="font-mono font-bold">#{completedOrder._id.slice(-4)}</span> has been fulfilled.
+                 </p>
+                 <button onClick={() => setCompletedOrder(null)} className="w-full btn btn-primary py-3 text-lg font-bold">Awesome!</button>
+              </div>
+           </div>
+        )}
+        {refundNotification && (
+           <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+                 <div className="mx-auto w-20 h-20 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mb-6">
+                    <Info size={40} className="text-red-600 dark:text-red-400" />
+                 </div>
+                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Refund Initiated</h2>
+                 <p className="text-slate-500 dark:text-slate-400 mb-6">
+                    Order <span className="font-mono font-bold">#{refundNotification._id.slice(-4)}</span> was cancelled. Refund processed.
+                 </p>
+                 <button onClick={() => setRefundNotification(null)} className="w-full btn btn-outline py-3 text-lg font-bold">Close</button>
+              </div>
+           </div>
+        )}
+      </>
+    );
+  }
+
+  // Step: Upload (default)
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300 pb-20 lg:pb-0">
       {/* Header */}
@@ -624,12 +925,14 @@ const UserDashboard = () => {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
-            {/* Desktop: Show shop rates */}
             <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-3 py-1.5 rounded-lg">
               <span className="font-bold text-slate-700 dark:text-slate-200">B&W ₹{selectedShop.pricing?.bw?.single}</span>
               <span>/</span>
               <span className="font-bold text-slate-700 dark:text-slate-200">Color ₹{selectedShop.pricing?.color?.single}</span>
             </div>
+            <button onClick={() => setShowOrdersModal(true)} className="p-2 text-slate-500 hover:text-primary rounded-lg" title="My Orders">
+              <Clock size={20} />
+            </button>
             <button onClick={() => { logout(); navigate('/login'); }} className="text-sm text-slate-500 hover:text-red-500 flex items-center gap-2 dark:text-slate-400 dark:hover:text-red-400">
               <LogOut size={18} />
               <span className="hidden sm:inline">Logout</span>
@@ -638,257 +941,105 @@ const UserDashboard = () => {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-8">
+      <main className="max-w-3xl mx-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
 
-        {/* Left: Upload & Config */}
-        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
-
-          {/* Mobile Rates Banner */}
-          <div className="md:hidden flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
-            <Info size={14}/>
-            <span>Rates: <span className="font-bold text-slate-700 dark:text-slate-200">B&W ₹{selectedShop.pricing?.bw?.single}</span> / <span className="font-bold text-slate-700 dark:text-slate-200">Color ₹{selectedShop.pricing?.color?.single}</span></span>
-          </div>
-
-          <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
-            <h2 className="font-bold text-lg dark:text-white mb-4">Upload Documents</h2>
-            <FileUpload onUploadComplete={handleUploadComplete} shopId={selectedShop._id} />
-          </div>
-
-          <div className="space-y-3 sm:space-y-4">
-            {cart.map((item, idx) => (
-              <div key={idx} className="bg-white dark:bg-slate-800 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-
-                {/* File Header */}
-                <div className="flex items-start justify-between mb-3 sm:mb-4 border-b border-slate-100 dark:border-slate-700 pb-3 sm:pb-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="p-2 sm:p-3 bg-slate-100 dark:bg-slate-700 rounded-xl shrink-0">
-                      <FileText size={20} className="text-slate-600 dark:text-slate-300" />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="font-bold text-slate-800 dark:text-white text-sm sm:text-lg truncate">{item.originalName}</h4>
-                      <div className="flex items-center gap-1 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                        <span>Pages:</span>
-                        <input
-                          type="number"
-                          readOnly
-                          className="w-12 bg-slate-100 dark:bg-slate-900 text-center font-bold focus:outline-none dark:text-white rounded px-1 cursor-not-allowed text-slate-500"
-                          value={item.pageCount}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-1 shrink-0">
-                    {item.previewUrl && (
-                      <a href={item.previewUrl} target="_blank" rel="noreferrer" className="p-2 text-slate-400 hover:text-primary-hover hover:bg-primary/5 rounded-lg transition-colors" title="Preview">
-                        <Eye size={18} />
-                      </a>
-                    )}
-                    <button onClick={() => {
-                      const newCart = [...cart];
-                      newCart.splice(idx, 1);
-                      setCart(newCart);
-                    }} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors">
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Configuration Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-                  <div>
-                    <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Color</label>
-                    <select
-                      className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                      value={item.config.color}
-                      onChange={(e) => updateConfig(idx, 'color', e.target.value)}
-                    >
-                      <option value="bw">B&W</option>
-                      <option value="color">Color</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Sides</label>
-                    <select
-                      className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white disabled:opacity-50"
-                      value={item.config.side}
-                      onChange={(e) => updateConfig(idx, 'side', e.target.value)}
-                      disabled={item.pageCount < 2} 
-                    >
-                      <option value="single">Single</option>
-                      {item.pageCount >= 2 && <option value="double">Double</option>}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Orientation</label>
-                    <select
-                      className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                      value={item.config.orientation}
-                      onChange={(e) => updateConfig(idx, 'orientation', e.target.value)}
-                    >
-                      <option value="portrait">Portrait</option>
-                      <option value="landscape">Landscape</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Size</label>
-                    <select
-                      className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                      value={item.config.paperSize}
-                      onChange={(e) => updateConfig(idx, 'paperSize', e.target.value)}
-                    >
-                      <option value="A4">A4</option>
-                      <option value="A3">A3</option>
-                      <option value="A2">A2</option>
-                      <option value="A1">A1</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Page Range</label>
-                    <input
-                      type="text"
-                      className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                      placeholder="All"
-                      value={item.config.pageRange}
-                      onChange={(e) => updateConfig(idx, 'pageRange', e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-1 block">Copies</label>
-                    <input
-                      type="number"
-                      min="1"
-                      className="w-full input-field py-2 text-xs sm:text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                      value={item.config.copies || ''}
-                      onChange={(e) => {
-                         const val = parseInt(e.target.value);
-                         if (isNaN(val)) updateConfig(idx, 'copies', 0);
-                         else updateConfig(idx, 'copies', val);
-                      }}
-                      onBlur={() => {
-                         if (!item.config.copies || item.config.copies < 1) updateConfig(idx, 'copies', 1);
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {cart.length === 0 && (
-              <div className="text-center py-10 sm:py-12 text-slate-400 bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
-                <FileText size={40} className="mx-auto mb-3 opacity-50" />
-                <p className="text-sm sm:text-base">Upload documents to get started</p>
-              </div>
-            )}
-          </div>
+        {/* Mobile Rates Banner */}
+        <div className="md:hidden flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
+          <Info size={14}/>
+          <span>Rates: <span className="font-bold text-slate-700 dark:text-slate-200">B&W ₹{selectedShop.pricing?.bw?.single}</span> / <span className="font-bold text-slate-700 dark:text-slate-200">Color ₹{selectedShop.pricing?.color?.single}</span></span>
         </div>
 
-        {/* Right: Checkout Summary - Desktop */}
-        <div className="hidden lg:block lg:col-span-1">
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 sticky top-24">
-            <h3 className="font-bold text-xl mb-6 flex items-center gap-2 dark:text-white">
-              <ShoppingCart className="text-primary" /> Order Summary
-            </h3>
+        <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+          <h2 className="font-bold text-lg dark:text-white mb-4">Upload Documents</h2>
+          <FileUpload 
+            onUploadComplete={handleUploadComplete} 
+            onProgress={handleUploadProgress}
+            onUploadStart={handleUploadStart}
+            onUploadEnd={handleUploadEnd}
+            shopId={selectedShop._id} 
+          />
+        </div>
 
-            <div className="space-y-4 mb-6 max-h-[300px] overflow-y-auto pr-2">
-              {cart.map((item, i) => (
-                <div key={i} className="flex justify-between items-start text-sm pb-4 border-b border-slate-50 dark:border-slate-700 last:border-0">
-                  <div className="w-2/3">
-                    <p className="font-medium text-slate-800 dark:text-white truncate">{item.originalName}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {item.config.color === 'color' ? 'Color' : 'B&W'} • {item.config.paperSize} • {item.config.orientation} • {item.config.copies}x
-                    </p>
-                  </div>
-                  <span className="font-bold text-slate-700 dark:text-slate-200">
-                     ₹{((item.config.color === 'bw' ? selectedShop.pricing?.bw?.single : selectedShop.pricing?.color?.single) * item.pageCount * item.config.copies).toFixed(2)}
-                  </span>
+        {/* Show existing cart items count */}
+        {cart.length > 0 && (
+          <div 
+            onClick={() => setStep('cart')}
+            className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-green-200 dark:border-green-800 shadow-sm cursor-pointer hover:shadow-md transition-all"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-100 dark:bg-green-900 rounded-xl flex items-center justify-center">
+                  <FileText size={20} className="text-green-600 dark:text-green-400" />
                 </div>
-              ))}
-            </div>
-
-            <div className="pt-4 mt-auto">
-              <div className="flex justify-between items-center mb-6">
-                <span className="text-slate-500 dark:text-slate-400">Total</span>
-                <span className="text-3xl font-bold text-slate-900 dark:text-white">₹{calculateTotal().toFixed(2)}</span>
+                <div>
+                  <p className="font-semibold text-slate-800 dark:text-white">{cart.length} item{cart.length > 1 ? 's' : ''} in cart</p>
+                  <p className="text-xs text-slate-400">₹{calculateTotal().toFixed(0)} total</p>
+                </div>
               </div>
-
-              <button
-                onClick={handleCheckout}
-                disabled={cart.length === 0}
-                className="w-full btn btn-primary font-bold text-lg shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Pay & Print
+              <button className="btn-add-to-cart py-2.5 px-4 text-sm">
+                View Cart <ArrowRight size={14} />
               </button>
             </div>
           </div>
-        </div>
+        )}
+
+        {cart.length === 0 && (
+          <div className="text-center py-10 sm:py-12 text-slate-400 bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+            <FileText size={40} className="mx-auto mb-3 opacity-50" />
+            <p className="text-sm sm:text-base">Upload documents to get started</p>
+          </div>
+        )}
       </main>
 
-      {/* Mobile Floating Cart Button */}
-      {cart.length > 0 && (
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 shadow-lg z-30">
-          <button
-            onClick={() => setShowMobileCart(true)}
-            className="w-full btn btn-primary font-bold text-base flex items-center justify-center gap-3 py-3"
-          >
-            <ShoppingCart size={20} />
-            <span>View Cart ({cart.length})</span>
-            <span className="bg-white/20 px-3 py-1 rounded-lg">₹{calculateTotal().toFixed(2)}</span>
-          </button>
-        </div>
+      {/* Upload Progress Modal */}
+      {showUploadProgress && (
+        <UploadProgressModal
+          current={uploadProgress.current}
+          total={uploadProgress.total}
+          percent={uploadProgress.percent}
+          onCancel={() => setShowUploadProgress(false)}
+        />
       )}
 
-      {/* Mobile Cart Modal */}
-      {showMobileCart && (
-        <div className="lg:hidden fixed inset-0 z-50 bg-black/50 flex items-end">
-          <div className="bg-white dark:bg-slate-800 rounded-t-2xl w-full max-h-[85vh] overflow-hidden flex flex-col shadow-xl">
-            <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
-              <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
-                <ShoppingCart className="text-primary" size={20} /> Order Summary
-              </h3>
-              <button onClick={() => setShowMobileCart(false)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg dark:text-slate-400">
-                <X size={20}/>
-              </button>
+      {/* My Orders Modal */}
+      {showOrdersModal && (
+         <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center">
+            <div className="bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg max-h-[85vh] sm:max-h-[80vh] overflow-hidden flex flex-col shadow-xl sm:m-4">
+               <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
+                  <h3 className="font-bold text-lg dark:text-white">My Orders</h3>
+                  <button onClick={() => setShowOrdersModal(false)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg dark:text-slate-400"><X size={20}/></button>
+               </div>
+               <div className="flex-1 overflow-auto p-4 space-y-3">
+                  {myOrders.length === 0 ? <p className="text-center text-slate-400 py-10">No orders yet.</p> :
+                     myOrders.map(order => (
+                        <div key={order._id} className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 sm:p-4 dark:bg-slate-800">
+                           <div className="flex justify-between items-start gap-2">
+                             <div className="min-w-0">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                   <span className="font-bold text-slate-800 dark:text-white">#{order._id.slice(-4)}</span>
+                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                      order.orderStatus === 'QUEUED' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' :
+                                      order.orderStatus === 'COMPLETED' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
+                                      order.orderStatus === 'CANCELLED' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-slate-100 dark:bg-slate-700'
+                                   }`}>{order.orderStatus}</span>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">{new Date(order.createdAt).toLocaleString()} • ₹{order.totalAmount}</p>
+                             </div>
+                             {order.orderStatus === 'QUEUED' && (
+                                <button onClick={() => handleCancelOrder(order._id)} className="btn btn-outline text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 border-red-200 dark:border-red-900 text-xs py-1.5 px-2 shrink-0">
+                                   Cancel
+                                </button>
+                             )}
+                           </div>
+                        </div>
+                     ))
+                  }
+               </div>
             </div>
-
-            <div className="flex-1 overflow-auto p-4 space-y-3">
-              {cart.map((item, i) => (
-                <div key={i} className="flex justify-between items-start text-sm pb-3 border-b border-slate-100 dark:border-slate-700 last:border-0">
-                  <div className="min-w-0 flex-1 mr-3">
-                    <p className="font-medium text-slate-800 dark:text-white truncate">{item.originalName}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {item.config.color === 'color' ? 'Color' : 'B&W'} • {item.config.paperSize} • {item.config.orientation} • {item.config.copies}x copy
-                    </p>
-                  </div>
-                  <span className="font-bold text-slate-700 dark:text-slate-200 shrink-0">
-                     ₹{((item.config.color === 'bw' ? selectedShop.pricing?.bw?.single : selectedShop.pricing?.color?.single) * item.pageCount * item.config.copies).toFixed(2)}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="p-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 shrink-0">
-              <div className="flex justify-between items-center mb-4">
-                <span className="text-slate-500 dark:text-slate-400 font-medium">Total Amount</span>
-                <span className="text-2xl font-bold text-slate-900 dark:text-white">₹{calculateTotal().toFixed(2)}</span>
-              </div>
-              <button
-                onClick={handleCheckout}
-                className="w-full btn btn-primary font-bold text-lg py-3"
-              >
-                Pay & Print
-              </button>
-            </div>
-          </div>
-        </div>
+         </div>
       )}
 
-      {/* Completion Modal (Global for View 2) */}
+      {/* Completion Modal */}
       {completedOrder && (
           <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center animate-in fade-in zoom-in shadow-2xl relative overflow-hidden">

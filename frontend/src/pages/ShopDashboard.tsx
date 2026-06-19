@@ -21,24 +21,7 @@ const ShopDashboard = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  if (isMobile) {
-    return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-6">
-        <div className="text-center max-w-sm">
-          <div className="bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
-            <LayoutDashboard size={32} />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Desktop Only</h2>
-          <p className="text-slate-500 dark:text-slate-400 mb-6">
-            The Shop Dashboard is optimized for desktop use to manage orders efficiently. Please switch to a larger screen.
-          </p>
-          <button onClick={() => { logout(); navigate('/login'); }} className="btn btn-outline w-full justify-center">
-            Go Back to Login
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Mobile check moved to bottom to prevent hook rule violations
 
   const [orders, setOrders] = useState<any[]>([]);
   const [shop, setShop] = useState<any>(null);
@@ -86,7 +69,7 @@ const ShopDashboard = () => {
     try {
       const { data } = await api.get('/shops/my-shop');
       setShop(data);
-    } catch (err: any) { 
+    } catch (err: unknown) { 
       if (err.response?.status === 404 && user?.role === 'OWNER') {
          navigate('/shop/setup');
       }
@@ -99,15 +82,15 @@ const ShopDashboard = () => {
       const { data } = await api.get('/orders/shop');
       setOrders(data);
       updateStats(data);
-    } catch (err) { }
+    } catch (_err) { }
   };
 
-  const updateStats = (data: any[]) => {
-    const pending = data.filter((o: any) => o.orderStatus === 'QUEUED').length;
-    const printed = data.filter((o: any) => o.orderStatus === 'COMPLETED').length;
+  const updateStats = (data: unknown[]) => {
+    const pending = data.filter((o: unknown) => o.orderStatus === 'QUEUED').length;
+    const printed = data.filter((o: unknown) => o.orderStatus === 'COMPLETED').length;
     const revenue = data
-       .filter((o: any) => o.orderStatus !== 'CANCELLED')
-       .reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+       .filter((o: unknown) => o.orderStatus !== 'CANCELLED')
+       .reduce((sum: number, o: unknown) => sum + (o.totalAmount || 0), 0);
     setStats({ pending, printed, revenue });
   };
 
@@ -138,7 +121,9 @@ const ShopDashboard = () => {
     fetchShopDetails();
     fetchOrders();
 
-    const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
+    const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
+      auth: { token: sessionStorage.getItem('token') },
+    });
     setSocket(newSocket);
 
     return () => { newSocket.close(); };
@@ -148,7 +133,7 @@ const ShopDashboard = () => {
     if (socket && shop) {
       socket.emit('join_shop', shop._id);
       
-      const handleNewOrder = (newOrder: any) => {
+      const handleNewOrder = (newOrder: unknown) => {
         toast(() => (
           <div className="flex items-center gap-2">
             <span className="text-xl">🔔</span>
@@ -166,7 +151,7 @@ const ShopDashboard = () => {
         });
       };
 
-      const handleOrderUpdate = (updatedOrder: any) => {
+      const handleOrderUpdate = (updatedOrder: unknown) => {
          setOrders(prev => {
             const newOrders = prev.map(o => o._id === updatedOrder._id ? updatedOrder : o);
             updateStats(newOrders);
@@ -194,7 +179,7 @@ const ShopDashboard = () => {
       setOrders(updatedOrders);
       updateStats(updatedOrders);
       toast.success('Order Completed');
-    } catch (error) { toast.error('Failed to update status'); }
+    } catch (_error) { toast.error('Failed to update status'); }
   };
 
   const cancelOrder = async (orderId: string) => {
@@ -205,7 +190,7 @@ const ShopDashboard = () => {
       setOrders(updatedOrders);
       updateStats(updatedOrders);
       toast.success('Order Cancelled');
-    } catch (error) { toast.error('Failed to cancel order'); }
+    } catch (_error) { toast.error('Failed to cancel order'); }
   };
 
   const [toggling, setToggling] = useState(false);
@@ -217,7 +202,7 @@ const ShopDashboard = () => {
       const { data } = await api.put('/shops/status');
       await fetchShopDetails();
       toast.success(data.status === 'OPEN' ? 'Shop is now OPEN' : 'Shop is now CLOSED');
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(e.response?.data?.message || 'Failed to toggle status');
     } finally { setToggling(false); }
   };
@@ -229,7 +214,7 @@ const ShopDashboard = () => {
       toast.success('Employee added successfully');
       setShowEmployeeModal(false);
       setEmpName(''); setEmpEmail(''); setEmpPass('');
-    } catch (e) { toast.error('Failed to add employee'); }
+    } catch (_e) { toast.error('Failed to add employee'); }
   };
 
   const openPreview = async (storageKey: string, _originalName: string, autoPrint = false) => {
@@ -257,7 +242,7 @@ const ShopDashboard = () => {
        
        if (autoPrint) setAutoPrintTriggered(true);
 
-     } catch (e) { 
+     } catch (_e) { 
         toast.dismiss('preview-loader');
         toast.error('Could not load file. Server conversion failed.');
      }
@@ -266,7 +251,7 @@ const ShopDashboard = () => {
   // ... (Rest of UI)
 
 
-  const renderSpecs = (config: any) => (
+  const renderSpecs = (config: unknown) => (
       <div className="flex flex-wrap gap-2 mt-1">
         <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border flex items-center gap-1 ${config.color === 'color' ? 'bg-pink-100 text-pink-700 border-pink-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
           <Palette size={10} /> {config.color === 'color' ? 'COLOR' : 'B&W'}
@@ -299,6 +284,25 @@ const ShopDashboard = () => {
     if (activeTab === 'active') return ['QUEUED', 'PRINTING', 'READY'].includes(o.orderStatus);
     return ['COMPLETED', 'CANCELLED'].includes(o.orderStatus);
   });
+
+  if (isMobile) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          <div className="bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+            <LayoutDashboard size={32} />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Desktop Only</h2>
+          <p className="text-slate-500 dark:text-slate-400 mb-6">
+            The Shop Dashboard is optimized for desktop use to manage orders efficiently. Please switch to a larger screen.
+          </p>
+          <button onClick={() => { logout(); navigate('/login'); }} className="btn btn-outline w-full justify-center">
+            Go Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-900 relative">
@@ -416,7 +420,7 @@ const ShopDashboard = () => {
                         </td>
                         <td className="p-4">
                           <div className="space-y-3">
-                            {order.items.map((item: any, idx: number) => (
+                            {order.items.map((item: unknown, idx: number) => (
                               <div key={idx} className="flex flex-col gap-1">
                                 <div className="flex items-center gap-2 font-medium text-slate-900 dark:text-slate-100">
                                   <FileText size={16} className="text-slate-600 dark:text-slate-400" />

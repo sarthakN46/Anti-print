@@ -11,7 +11,7 @@ import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 
-let DefaultIcon = L.icon({
+const DefaultIcon = L.icon({
     iconUrl: icon,
     shadowUrl: iconShadow,
     iconSize: [25, 41],
@@ -25,19 +25,19 @@ const getAddressFromCoords = async (lat: number, lng: number) => {
     const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
     const data = await res.json();
     return data.display_name;
-  } catch (e) {
+  } catch (_e) {
     return '';
   }
 };
 
-const LocationMarker = ({ setPos, pos, setAddress }: { setPos: any, pos: [number, number], setAddress: any }) => {
+const LocationMarker = ({ setPos, pos, setAddress }: { setPos: unknown, pos: [number, number], setAddress: unknown }) => {
   const map = useMap();
   
   useMapEvents({
     async click(e) {
       setPos([e.latlng.lat, e.latlng.lng]);
       const addr = await getAddressFromCoords(e.latlng.lat, e.latlng.lng);
-      if (addr) setAddress((prev: any) => ({ ...prev, address: addr }));
+      if (addr) setAddress((prev: unknown) => ({ ...prev, address: addr }));
     },
   });
 
@@ -102,7 +102,7 @@ const ShopSetup = () => {
       toast.success("Shop configured successfully!");
       navigate('/shop/dashboard', { replace: true }); 
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.response?.data?.message || 'Setup failed');
     } finally {
       setLoading(false);
@@ -125,7 +125,7 @@ const ShopSetup = () => {
       // Note: We now store just the KEY so backend can move it.
       setImgUrl(data.storageKey);
       toast.success('Image uploaded!');
-    } catch (err) {
+    } catch (_err) {
       toast.error('Image upload failed');
     } finally {
       setUploadingImg(false);

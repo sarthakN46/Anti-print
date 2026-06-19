@@ -127,6 +127,12 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
 
     newOrder.items = processedItems;
     newOrder.totalAmount = grandTotal;
+
+    // Validate minimum ₹1 total (Razorpay requires minimum ₹1)
+    if (grandTotal < 1) {
+      res.status(400).json({ message: 'Order total must be at least ₹1. Please adjust your order.' });
+      return;
+    }
     
     await newOrder.save();
 
@@ -148,6 +154,18 @@ export const createPaymentOrder = async (req: AuthRequest, res: Response): Promi
     
     if (!order) {
       res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    // SECURITY: Verify the requesting user owns this order
+    if (order.user.toString() !== req.user?._id.toString()) {
+      res.status(403).json({ message: 'Not authorized to pay for this order' });
+      return;
+    }
+
+    // Validate minimum ₹1 (Razorpay minimum)
+    if (order.totalAmount < 1) {
+      res.status(400).json({ message: 'Payment amount must be at least ₹1' });
       return;
     }
 
@@ -269,10 +287,31 @@ export const getShopOrders = async (req: AuthRequest, res: Response): Promise<vo
 export const updateOrderStatus = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { status } = req.body; 
+
+    // Validate status value
+    const VALID_STATUSES = ['QUEUED', 'PROCESSING', 'PRINTING', 'READY', 'COMPLETED', 'CANCELLED'];
+    if (!status || !VALID_STATUSES.includes(status)) {
+      res.status(400).json({ message: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
+      return;
+    }
+
     const order = await Order.findById(req.params.id);
 
     if (!order) {
       res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    // SECURITY: Verify the caller's shop owns this order (multi-tenant isolation)
+    let callerShop;
+    if (req.user?.role === 'EMPLOYEE') {
+      callerShop = await Shop.findById(req.user.associatedShop);
+    } else {
+      callerShop = await Shop.findOne({ owner: req.user?._id });
+    }
+
+    if (!callerShop || callerShop._id.toString() !== order.shop.toString()) {
+      res.status(403).json({ message: 'Not authorized to update this order' });
       return;
     }
 
@@ -288,7 +327,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
        io.to(shopId).emit('order_status_updated', order);
        io.to(userId).emit('order_status_updated', order);
     } catch (e) {
-       console.error('Socket emission failed', e);
+       // Socket emission failure is non-critical
     }
 
     res.json(order);
@@ -322,7 +361,7 @@ export const cancelOrder = async (req: AuthRequest, res: Response): Promise<void
     }
 
     if (!isOwner && !isShopStaff) {
-       res.status(401).json({ message: 'Not authorized' });
+       res.status(403).json({ message: 'Not authorized' });
        return;
     }
 
@@ -456,12 +495,9 @@ export const getShopHistory = async (req: AuthRequest, res: Response): Promise<v
 // @access  Private (User)
 export const getMyOrders = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    console.log(`[getMyOrders] Fetching for user: ${req.user?._id}`);
     const orders = await Order.find({ user: req.user?._id }).sort({ createdAt: -1 });
-    console.log(`[getMyOrders] Found ${orders.length} orders`);
     res.json(orders);
   } catch (error) {
-    console.error(`[getMyOrders] Error:`, error);
     res.status(500).json({ message: 'Server Error' });
   }
 };

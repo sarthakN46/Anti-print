@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import os from 'os';
+import { sanitizeFilename, isValidStorageKey } from '../middlewares/securityMiddleware';
 
 // Type definition for Multer file (Standard Express type)
 interface MulterRequest extends Request {
@@ -79,7 +80,9 @@ export const uploadFile = async (req: MulterRequest, res: Response): Promise<voi
     const fileHash = hashSum.digest('hex');
 
     // 2. Determine Folder Path
-    const fileExt = req.file.originalname.split('.').pop();
+    // SECURITY: Sanitize filename to prevent path traversal
+    const safeOriginalName = sanitizeFilename(req.file.originalname);
+    const fileExt = safeOriginalName.split('.').pop() || 'bin';
     const fileUuid = uuidv4();
     let storageKey = '';
 
@@ -120,12 +123,12 @@ export const uploadFile = async (req: MulterRequest, res: Response): Promise<voi
     // 4. Return the Keys + Analysis to Frontend
     res.status(201).json({
       message: 'File uploaded successfully',
-      originalName: req.file.originalname,
+      originalName: safeOriginalName,
       storageKey: uploadResult.Key, 
       fileHash: fileHash,           
       location: uploadResult.Location,
-      pageCount: analysis.pageCount, // <--- Sent to frontend
-      fileType: analysis.type        // <--- Sent to frontend
+      pageCount: analysis.pageCount,
+      fileType: analysis.type
     });
 
   } catch (error) {
@@ -157,8 +160,8 @@ const runConverter = (inputPath: string, outputPath: string): Promise<void> => {
 export const getPreviewPdf = async (req: Request, res: Response): Promise<void> => {
   try {
     const { storageKey } = req.body;
-    if (!storageKey) {
-       res.status(400).json({ message: 'Key required' });
+    if (!storageKey || !isValidStorageKey(storageKey)) {
+       res.status(400).json({ message: 'Invalid or missing storage key' });
        return;
     }
 

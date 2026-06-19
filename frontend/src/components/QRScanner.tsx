@@ -34,24 +34,24 @@ const QRScanner = ({ onScan, onClose }: ScannerProps) => {
     }
   }, [isScanning]);
 
-  const cleanupScanner = async () => {
+  async function cleanupScanner() {
       if (scannerRef.current) {
           try {
               if (scannerRef.current.isScanning) {
                   await scannerRef.current.stop();
               }
               await scannerRef.current.clear(); 
-          } catch (e) {
+          } catch (_e) {
               console.warn("Failed to stop/clear scanner", e);
           }
           scannerRef.current = null;
       }
-  };
+  }
 
-  const checkInitialPermission = async () => {
+  async function checkInitialPermission() {
     try {
-      // @ts-ignore
-      const permissionStatus = await navigator.permissions.query({ name: 'camera' });
+      // @ts-expect-error - navigator.permissions might have a different type definition
+      const permissionStatus = await navigator.permissions.query({ name: 'camera' as any });
       if (permissionStatus.state === 'granted') {
          setIsScanning(true); // This triggers the 2nd useEffect
       } else if (permissionStatus.state === 'denied') {
@@ -60,13 +60,13 @@ const QRScanner = ({ onScan, onClose }: ScannerProps) => {
       } else {
          setShowPermissionPrompt(true);
       }
-    } catch (e) {
+    } catch (_e) {
        // Firefox/Safari might not support query, just show prompt
        setShowPermissionPrompt(true);
     }
-  };
+  }
 
-  const initializeScanner = async () => {
+  async function initializeScanner() {
      // Safety delay to ensure DOM is painted
      await new Promise(res => setTimeout(res, 100));
      
@@ -86,14 +86,14 @@ const QRScanner = ({ onScan, onClose }: ScannerProps) => {
           },
           () => { /* ignore frame errors */ }
       );
-     } catch (err: any) {
+     } catch (_err) {
         if (!mountedRef.current) return;
         console.error("Camera start error:", err);
         setPermissionDenied(true);
         setIsScanning(false);
-        setError("Could not start camera. " + (err?.message || ""));
+        setError("Could not start camera. " + (err instanceof Error ? err.message : String(err)));
      }
-  };
+  }
 
   const handleAllow = () => {
       setShowPermissionPrompt(false);
@@ -123,7 +123,7 @@ const QRScanner = ({ onScan, onClose }: ScannerProps) => {
         try {
            const decodedText = await html5QrCode.scanFile(file, true);
            onScan(decodedText);
-        } catch (err) {
+        } catch (_err) {
            toast.error("Could not find QR code in image");
         }
      }

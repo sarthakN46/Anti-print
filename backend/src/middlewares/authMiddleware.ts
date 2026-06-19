@@ -8,7 +8,7 @@ export interface AuthRequest extends Request {
 }
 
 export const protect = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  let token;
+  let token: string | undefined;
 
   // 1. Check if the header has "Bearer <token>"
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -16,8 +16,17 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
       // Get token from header
       token = req.headers.authorization.split(' ')[1];
 
-      // Verify token
-      const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
+      // Basic structural validation before calling jwt.verify
+      if (!token || token.split('.').length !== 3) {
+        res.status(401).json({ message: 'Not authorized, malformed token' });
+        return;
+      }
+
+      // Verify token with issuer/audience claims
+      const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string, {
+        issuer: 'xerox-saas',
+        audience: 'xerox-app',
+      });
 
       // Get user from the token (exclude password)
       const user = await User.findById(decoded.userId).select('-password');
@@ -30,14 +39,21 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
       // Attach user to the request object so the Controller can use it
       req.user = user;
       next();
-    } catch (error) {
-      console.error(error);
-      res.status(401).json({ message: 'Not authorized, token failed' });
+    } catch (error: any) {
+      // Differentiate between expired and invalid tokens
+      if (error.name === 'TokenExpiredError') {
+        res.status(401).json({ message: 'Token expired, please login again' });
+      } else if (error.name === 'JsonWebTokenError') {
+        res.status(401).json({ message: 'Not authorized, invalid token' });
+      } else {
+        res.status(401).json({ message: 'Not authorized, token failed' });
+      }
+      return; // Ensure we don't continue
     }
-  }
-
-  if (!token) {
+  } else {
+    // FIX: Added 'return' — previously execution continued past this block
     res.status(401).json({ message: 'Not authorized, no token' });
+    return;
   }
 };
 
@@ -45,7 +61,7 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
 export const authorize = (...roles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user || !roles.includes(req.user.role)) {
-      res.status(403).json({ message: `User role ${req.user?.role} is not authorized to access this route` });
+      res.status(403).json({ message: `User role '${req.user?.role || 'unknown'}' is not authorized to access this route` });
       return;
     }
     next();
