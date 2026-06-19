@@ -152,12 +152,17 @@ app.get('/', (_req, res) => {
   });
 });
 
-// 7. Start Server
+// 7. Start Server (Only if not in a Vercel Serverless Environment)
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-  console.log(`🔒 CORS: ${ALLOWED_ORIGIN}`);
-  console.log(`🔒 Rate Limiting: Enabled`);
-  console.log(`🔒 NoSQL Sanitization: Enabled`);
-  console.log(`🔒 Helmet: Enabled`);
-});
+if (process.env.VERCEL !== '1') {
+  server.listen(PORT, () => {
+    console.log(`🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+    console.log(`🔒 CORS: ${ALLOWED_ORIGIN}`);
+    console.log(`🔒 Rate Limiting: Enabled`);
+    console.log(`🔒 NoSQL Sanitization: Enabled`);
+    console.log(`🔒 Helmet: Enabled`);
+  });
+}
+
+// Export the app for Vercel Serverless
+export default app;
