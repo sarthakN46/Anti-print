@@ -99,11 +99,37 @@ const ShopDashboard = () => {
   const handlePrint = () => {
     if (!previewUrl) return;
 
-    // Use print-js
     if (previewType === 'img') {
-       printJS({ printable: previewUrl, type: 'image', header: 'XeroxSaaS Print' });
+       // Use a dedicated print window for images to avoid print-js multi-page/header issues
+       const printWindow = window.open('', '_blank');
+       if (!printWindow) {
+         toast.error('Please allow pop-ups to print images.');
+         return;
+       }
+       printWindow.document.write(`
+         <!DOCTYPE html>
+         <html>
+           <head>
+             <title>Print Image</title>
+             <style>
+               * { margin: 0; padding: 0; box-sizing: border-box; }
+               body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #fff; }
+               img { max-width: 100%; max-height: 100vh; object-fit: contain; }
+               @media print {
+                 @page { margin: 0; }
+                 body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+                 img { max-width: 100%; max-height: 100vh; object-fit: contain; }
+               }
+             </style>
+           </head>
+           <body>
+             <img src="${previewUrl}" onload="setTimeout(function(){ window.print(); window.close(); }, 300);" />
+           </body>
+         </html>
+       `);
+       printWindow.document.close();
     } else {
-       // Assume PDF for everything else (since backend converts DOC/PPT)
+       // PDF (including backend-converted DOC/PPT/XLS)
        printJS({ printable: previewUrl, type: 'pdf', showModal: true });
     }
   };
