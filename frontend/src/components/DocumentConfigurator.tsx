@@ -243,7 +243,7 @@ const DocumentConfigurator = ({
   );
 
   return (
-    <div className="min-h-[100dvh] bg-white dark:bg-slate-900 flex flex-col page-enter">
+    <div className="h-[100dvh] overflow-hidden bg-white dark:bg-slate-900 flex flex-col page-enter">
       {/* Header — compact for mobile */}
       <header className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 px-3 py-2.5 flex justify-between items-center sticky top-0 z-20 safe-area-top">
         <button
@@ -267,7 +267,7 @@ const DocumentConfigurator = ({
 
       {/* Scrollable Content */}
       <div 
-        className="flex-1 overflow-auto overscroll-contain pb-[100px]"
+        className="flex-1 overflow-y-auto pb-[100px]"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {/* Preview Section */}
