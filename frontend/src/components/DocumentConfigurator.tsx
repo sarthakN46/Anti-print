@@ -48,7 +48,10 @@ const DocumentConfigurator = ({
   // Touch/swipe state
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
+  const touchStartY = useRef(0);
+  const touchEndY = useRef(0);
   const isDragging = useRef(false);
+  const isVerticalScroll = useRef(false);
 
   // Ensure activeIndex stays in bounds
   useEffect(() => {
@@ -158,16 +161,38 @@ const DocumentConfigurator = ({
   // Touch handlers for smooth mobile swipe
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
     touchEndX.current = e.touches[0].clientX;
+    touchEndY.current = e.touches[0].clientY;
     isDragging.current = true;
+    isVerticalScroll.current = false;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isDragging.current) return;
-    touchEndX.current = e.touches[0].clientX;
+
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+
+    const diffX = Math.abs(currentX - touchStartX.current);
+    const diffY = Math.abs(currentY - touchStartY.current);
+
+    // If the gesture is primarily vertical, cancel slide dragging to let native scrolling work
+    if (diffY > diffX && diffY > 10) {
+      isDragging.current = false;
+      isVerticalScroll.current = true;
+      return;
+    }
+
+    touchEndX.current = currentX;
+    touchEndY.current = currentY;
   };
 
   const handleTouchEnd = () => {
+    if (isVerticalScroll.current) {
+      isVerticalScroll.current = false;
+      return;
+    }
     if (!isDragging.current) return;
     isDragging.current = false;
     const diff = touchStartX.current - touchEndX.current;
@@ -241,11 +266,14 @@ const DocumentConfigurator = ({
       </header>
 
       {/* Scrollable Content */}
-      <div className="flex-1 overflow-auto overscroll-contain pb-[100px]">
+      <div 
+        className="flex-1 overflow-auto overscroll-contain pb-[100px]"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         {/* Preview Section */}
         <div
           className="relative bg-slate-50 dark:bg-slate-800/50 overflow-hidden"
-          style={{ minHeight: '220px', maxHeight: '320px' }}
+          style={{ minHeight: '220px', maxHeight: '320px', touchAction: 'pan-y' }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
