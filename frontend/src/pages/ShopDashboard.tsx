@@ -31,6 +31,8 @@ const ShopDashboard = () => {
   
   // UI States
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [previewOriginalName, setPreviewOriginalName] = useState<string>('');
   const [previewType, setPreviewType] = useState<string>('pdf'); 
   const [showEmployeeModal, setShowEmployeeModal] = useState(false);
   const [showQR, setShowQR] = useState(false);
@@ -243,12 +245,22 @@ const ShopDashboard = () => {
     } catch (_e) { toast.error('Failed to add employee'); }
   };
 
-  const openPreview = async (storageKey: string, _originalName: string, autoPrint = false) => {
+  const openPreview = async (previewKey: string, originalKey: string, originalName: string, autoPrint = false) => {
      try {
        toast.loading('Loading document...', { id: 'preview-loader' });
        
+       // Call the download URL endpoint to get a signed link to the original file
+       try {
+          const { data } = await api.post('/upload/download-url', { storageKey: originalKey, originalName });
+          setDownloadUrl(data.downloadUrl);
+       } catch (e) {
+          console.error("Failed to get download URL:", e);
+          setDownloadUrl(null);
+       }
+       setPreviewOriginalName(originalName);
+
        // Call the NEW conversion endpoint
-       const response = await api.post('/upload/preview-pdf', { storageKey }, {
+       const response = await api.post('/upload/preview-pdf', { storageKey: previewKey }, {
           responseType: 'blob' // We expect a binary blob
        });
 
@@ -452,7 +464,7 @@ const ShopDashboard = () => {
                                   <FileText size={16} className="text-slate-600 dark:text-slate-400" />
                                   <span className="truncate max-w-[200px]">{item.originalName}</span>
                                   <button 
-                                    onClick={() => openPreview(item.convertedKey || item.storageKey, item.originalName, true)}
+                                    onClick={() => openPreview(item.convertedKey || item.storageKey, item.storageKey, item.originalName, true)}
                                     className="ml-2 btn bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 text-[10px] py-1 px-3 shadow-none flex items-center gap-1"
                                   >
                                     <Printer size={12}/> Print
@@ -510,7 +522,15 @@ const ShopDashboard = () => {
                    <button onClick={handlePrint} className="btn btn-primary text-sm py-1.5 flex items-center gap-2">
                      <Printer size={16}/> Print Now
                    </button>
-                   <a href={previewUrl} download className="btn btn-outline text-sm py-1.5" target="_blank" rel="noreferrer">Download File</a>
+                    <a 
+                      href={downloadUrl || '#'} 
+                      download={previewOriginalName} 
+                      className={`btn btn-outline text-sm py-1.5 ${!downloadUrl ? 'opacity-50 pointer-events-none' : ''}`} 
+                      target="_blank" 
+                      rel="noreferrer"
+                    >
+                      Download File
+                    </a>
                    <button onClick={() => setPreviewUrl(null)} className="p-2 hover:bg-slate-200 rounded-lg text-slate-500"><X size={24}/></button>
                 </div>
              </div>

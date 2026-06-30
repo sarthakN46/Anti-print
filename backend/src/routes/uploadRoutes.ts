@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { uploadFile, getPreviewPdf } from '../controllers/uploadController'; 
+import { uploadFile, getPreviewPdf, getDownloadUrl } from '../controllers/uploadController'; 
 import { protect, authorize } from '../middlewares/authMiddleware';
 
 const router = express.Router();
@@ -53,5 +53,8 @@ router.post('/', protect, handleUpload, uploadFile);
 
 // NEW ROUTE: Get PDF Preview
 router.post('/preview-pdf', protect, authorize('OWNER', 'EMPLOYEE'), getPreviewPdf); 
+
+// ROUTE: Get Signed Original File Download URL
+router.post('/download-url', protect, authorize('OWNER', 'EMPLOYEE'), getDownloadUrl);
 
 export default router;

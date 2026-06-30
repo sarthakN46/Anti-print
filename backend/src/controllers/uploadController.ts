@@ -216,3 +216,30 @@ export const getPreviewPdf = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ message: 'Preview failed' });
   }
 };
+
+// @desc    Get Signed Download URL for Original File (forces correct original name)
+// @route   POST /api/upload/download-url
+// @access  Private (Owner/Employee only)
+export const getDownloadUrl = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { storageKey, originalName } = req.body;
+    if (!storageKey || !isValidStorageKey(storageKey)) {
+       res.status(400).json({ message: 'Invalid or missing storage key' });
+       return;
+    }
+
+    const safeOriginalName = originalName ? sanitizeFilename(originalName) : 'download';
+
+    const url = await s3.getSignedUrlPromise('getObject', {
+       Bucket: BUCKET_NAME,
+       Key: storageKey,
+       Expires: 3600, // 1 hour
+       ResponseContentDisposition: `attachment; filename="${encodeURIComponent(safeOriginalName)}"`
+    });
+
+    res.json({ downloadUrl: url });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Failed to generate download URL' });
+  }
+};
