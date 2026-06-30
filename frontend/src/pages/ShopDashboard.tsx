@@ -562,7 +562,7 @@ const ShopDashboard = () => {
               <div className="bg-white p-4 rounded-xl border border-slate-200 inline-block mb-6">
                  <QRCode 
                     id="shop-qr"
-                    value={`SHOP:${shop._id}`} 
+                    value={`${window.location.origin}/user/dashboard?shopId=${shop._id}`} 
                     size={200}
                     level="H"
                  />

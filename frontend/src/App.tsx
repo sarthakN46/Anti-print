@@ -17,7 +17,10 @@ const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode,
   const { user, isLoading } = useContext(AuthContext)!;
 
   if (isLoading) return <div>Loading...</div>;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) {
+    const search = window.location.search;
+    return <Navigate to={`/login${search}`} replace />;
+  }
   if (!allowedRoles.includes(user.role)) return <Navigate to="/" replace />;
 
   return children;

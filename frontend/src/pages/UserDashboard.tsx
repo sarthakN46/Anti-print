@@ -8,7 +8,7 @@ import CartPage from '../components/CartPage';
 import QRScanner from '../components/QRScanner';
 import toast from 'react-hot-toast';
 import { Store, LogOut, FileText, MapPin, ArrowRight, Loader2, Info, QrCode, X, ArrowLeft, Clock, List, Map as MapIcon, CheckCircle, HelpCircle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { io } from 'socket.io-client';
@@ -22,6 +22,7 @@ const SHOP_STORAGE_KEY = 'xerox_selected_shop';
 const UserDashboard = () => {
   const { user, logout } = useContext(AuthContext)!;
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [shops, setShops] = useState<any[]>([]);
   const [loadingShops, setLoadingShops] = useState(true);
@@ -199,6 +200,50 @@ const UserDashboard = () => {
     }
   };
 
+  useEffect(() => {
+    const shopId = searchParams.get('shopId');
+    if (!shopId) return;
+    if (loadingShops) return;
+
+    const selectShopFromParam = async () => {
+      const foundShop = shops.find(s => s._id === shopId);
+      if (foundShop) {
+         if (foundShop.status === 'CLOSED') {
+            toast.error(`Shop '${foundShop.name}' is currently CLOSED.`);
+            setSearchParams({}, { replace: true });
+            return;
+         }
+         handleSelectShop(foundShop);
+         toast.success(`Joined ${foundShop.name}`);
+         setSearchParams({}, { replace: true });
+      } else {
+         try {
+            toast.loading("Fetching shop details...");
+            const { data: shop } = await api.get(`/shops/qr/${shopId}`);
+            toast.dismiss();
+            if (shop) {
+               const status = shop.status?.toUpperCase();
+               if (status === 'CLOSED') {
+                  toast.error(`Shop '${shop.name}' is currently CLOSED.`);
+               } else {
+                  handleSelectShop(shop);
+                  toast.success(`Joined ${shop.name}`);
+               }
+            } else {
+               toast.error('Shop not found');
+            }
+         } catch (_e) {
+            toast.dismiss();
+            toast.error("Failed to load shop");
+         } finally {
+            setSearchParams({}, { replace: true });
+         }
+      }
+    };
+
+    selectShopFromParam();
+  }, [searchParams, loadingShops, shops, setSearchParams]);
+
   const handleClearShop = () => {
     setSelectedShop(null);
     setCart([]);
@@ -366,41 +411,64 @@ const UserDashboard = () => {
   };
 
   const handleScanResult = async (result: string) => {
+     let shopId = '';
      if (result.startsWith("SHOP:")) {
-        const shopId = result.split(":")[1];
-        const foundShop = shops.find(s => s._id === shopId);
-        
-        if (foundShop) {
-           if (foundShop.status === 'CLOSED') {
-              toast.error(`Shop '${foundShop.name}' is currently CLOSED.`);
-              setShowScanner(false);
-              return;
+        shopId = result.split(":")[1];
+     } else {
+        try {
+           const url = new URL(result);
+           const params = new URLSearchParams(url.search);
+           const id = params.get('shopId');
+           if (id) {
+              shopId = id;
            }
-           handleSelectShop(foundShop);
-           setShowScanner(false);
-           toast.success(`Joined ${foundShop.name}`);
-        } else {
-           try {
-              toast.loading("Fetching shop details...");
-              const { data: shop } = await api.get(`/shops/qr/${shopId}`);
-              toast.dismiss();
-              if (shop) {
-                 const status = shop.status?.toUpperCase();
-                 if (status === 'CLOSED') {
-                    toast.error(`Shop '${shop.name}' is currently CLOSED.`);
-                    setShowScanner(false);
-                    return;
-                 }
-                 handleSelectShop(shop);
-                 setShowScanner(false);
-                 toast.success(`Joined ${shop.name}`);
-              } else {
-                 toast.error('Shop not found');
+        } catch (e) {
+           if (result.includes('shopId=')) {
+              const matches = result.match(/[?&]shopId=([^&]+)/);
+              if (matches && matches[1]) {
+                 shopId = matches[1];
               }
-           } catch (_e) {
-              toast.dismiss();
-              toast.error('Could not find shop. It might be closed.');
            }
+        }
+     }
+
+     if (!shopId) {
+        toast.error("Invalid QR Code scanned.");
+        return;
+     }
+
+     const foundShop = shops.find(s => s._id === shopId);
+     
+     if (foundShop) {
+        if (foundShop.status === 'CLOSED') {
+           toast.error(`Shop '${foundShop.name}' is currently CLOSED.`);
+           setShowScanner(false);
+           return;
+        }
+        handleSelectShop(foundShop);
+        setShowScanner(false);
+        toast.success(`Joined ${foundShop.name}`);
+     } else {
+        try {
+           toast.loading("Fetching shop details...");
+           const { data: shop } = await api.get(`/shops/qr/${shopId}`);
+           toast.dismiss();
+           if (shop) {
+              const status = shop.status?.toUpperCase();
+              if (status === 'CLOSED') {
+                 toast.error(`Shop '${shop.name}' is currently CLOSED.`);
+                 setShowScanner(false);
+                 return;
+              }
+              handleSelectShop(shop);
+              setShowScanner(false);
+              toast.success(`Joined ${shop.name}`);
+           } else {
+              toast.error('Shop not found');
+           }
+        } catch (_e) {
+           toast.dismiss();
+           toast.error('Could not find shop. It might be closed.');
         }
      }
   };
