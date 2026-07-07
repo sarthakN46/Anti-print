@@ -48,7 +48,7 @@ export const createShop = async (req: AuthRequest, res: Response): Promise<void>
            // Copy
            await s3.copyObject({
              Bucket: BUCKET_NAME,
-             CopySource: `/${BUCKET_NAME}/${oldKey}`, 
+             CopySource: encodeURI(`/${BUCKET_NAME}/${oldKey}`), 
              Key: newKey
            }).promise();
            

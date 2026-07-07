@@ -102,7 +102,7 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
        try {
           await s3.copyObject({
              Bucket: BUCKET_NAME,
-             CopySource: `/${BUCKET_NAME}/${oldKey}`, // CopySource requires Bucket/Key
+             CopySource: encodeURI(`/${BUCKET_NAME}/${oldKey}`), // CopySource requires Bucket/Key
              Key: newKey
           }).promise();
 

@@ -118,9 +118,22 @@ const ShopDashboard = () => {
                body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #fff; }
                img { max-width: 100%; max-height: 100vh; object-fit: contain; }
                @media print {
-                 @page { margin: 0; }
-                 body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-                 img { max-width: 100%; max-height: 100vh; object-fit: contain; }
+                 @page { margin: 0; size: auto; }
+                 html, body { 
+                   height: 100%; 
+                   margin: 0; 
+                   padding: 0; 
+                   display: block; 
+                 }
+                 img { 
+                   display: block;
+                   width: 100%;
+                   height: 100%;
+                   max-height: 100%; 
+                   object-fit: contain; 
+                   page-break-inside: avoid;
+                   break-inside: avoid;
+                 }
                }
              </style>
            </head>
