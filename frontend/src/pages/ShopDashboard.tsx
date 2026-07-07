@@ -117,22 +117,20 @@ const ShopDashboard = () => {
                * { margin: 0; padding: 0; box-sizing: border-box; }
                body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #fff; }
                img { max-width: 100%; max-height: 100vh; object-fit: contain; }
-               @media print {
-                 @page { margin: 0; size: auto; }
+                @media print {
+                 @page { margin: 0; }
                  html, body { 
-                   height: 100%; 
                    margin: 0; 
                    padding: 0; 
-                   display: block; 
+                   width: 100vw;
+                   height: 100vh;
+                   overflow: hidden;
                  }
                  img { 
                    display: block;
-                   width: 100%;
-                   height: 100%;
-                   max-height: 100%; 
+                   width: 100vw;
+                   height: 100vh;
                    object-fit: contain; 
-                   page-break-inside: avoid;
-                   break-inside: avoid;
                  }
                }
              </style>
