@@ -109,36 +109,53 @@ const ShopDashboard = () => {
          return;
        }
        printWindow.document.write(`
-         <!DOCTYPE html>
-         <html>
-           <head>
-             <title>Print Image</title>
-             <style>
-               * { margin: 0; padding: 0; box-sizing: border-box; }
-               body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #fff; }
-               img { max-width: 100%; max-height: 100vh; object-fit: contain; }
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Print Image</title>
+              <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
                 @media print {
-                 @page { margin: 0; }
-                 html, body { 
-                   margin: 0; 
-                   padding: 0; 
-                   width: 100vw;
-                   height: 100vh;
-                   overflow: hidden;
-                 }
-                 img { 
-                   display: block;
-                   width: 100vw;
-                   height: 100vh;
-                   object-fit: contain; 
-                 }
-               }
-             </style>
-           </head>
-           <body>
-             <img src="${previewUrl}" onload="setTimeout(function(){ window.print(); window.close(); }, 300);" />
-           </body>
-         </html>
+                  @page { margin: 0; }
+                  html, body { 
+                    margin: 0; 
+                    padding: 0; 
+                    width: 100vw;
+                    height: 100vh;
+                    overflow: hidden;
+                    background: white;
+                  }
+                  img { 
+                    display: block;
+                    width: 100vw;
+                    height: 100vh;
+                    object-fit: contain; 
+                  }
+                }
+              </style>
+            </head>
+            <body>
+              <img id="printImg" src="${previewUrl}" />
+              <script>
+                const img = document.getElementById('printImg');
+                img.onload = function() {
+                  // Dynamically set page orientation to avoid white spaces
+                  const style = document.createElement('style');
+                  if (img.naturalWidth > img.naturalHeight) {
+                    style.innerHTML = '@media print { @page { size: landscape; } }';
+                  } else {
+                    style.innerHTML = '@media print { @page { size: portrait; } }';
+                  }
+                  document.head.appendChild(style);
+                  
+                  setTimeout(function(){ 
+                    window.print(); 
+                    window.close(); 
+                  }, 300);
+                };
+              </script>
+            </body>
+          </html>
        `);
        printWindow.document.close();
     } else {
