@@ -55,14 +55,10 @@ const ShopDashboard = () => {
   // Print State
   const [autoPrintTriggered, setAutoPrintTriggered] = useState(false);
 
+  // Employee Form
   const [empName, setEmpName] = useState('');
   const [empEmail, setEmpEmail] = useState('');
   const [empPass, setEmpPass] = useState('');
-
-  // Pickup Code Verification State
-  const [verifyOrderId, setVerifyOrderId] = useState<string | null>(null);
-  const [pickupCodeInput, setPickupCodeInput] = useState('');
-  const [isVerifying, setIsVerifying] = useState(false);
 
   const downloadQR = () => {
      // ... (Existing QR logic)
@@ -106,18 +102,12 @@ const ShopDashboard = () => {
     } catch (err) { }
   };
 
-  // BUG-007 & BUG-016: Stats show TODAY's data only + revenue from PAID orders only
   const updateStats = (data: any[]) => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const todayOrders = data.filter((o: any) => new Date(o.createdAt) >= todayStart);
-
-    const pending = data.filter((o: any) => ['QUEUED', 'PRINTING', 'READY'].includes(o.orderStatus)).length;
-    const printed = todayOrders.filter((o: any) => o.orderStatus === 'COMPLETED').length;
+    const pending = data.filter((o: any) => o.orderStatus === 'QUEUED').length;
+    const printed = data.filter((o: any) => o.orderStatus === 'COMPLETED').length;
     const revenue = data
-      .filter((o: any) => o.paymentStatus === 'PAID' && o.orderStatus !== 'CANCELLED')
-      .reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+       .filter((o: any) => o.orderStatus !== 'CANCELLED')
+       .reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
     setStats({ pending, printed, revenue });
   };
 
@@ -148,10 +138,7 @@ const ShopDashboard = () => {
     fetchShopDetails();
     fetchOrders();
 
-    const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
-      transports: ['websocket'],
-      reconnection: true
-    });
+    const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
     setSocket(newSocket);
 
     return () => { newSocket.close(); };
@@ -160,10 +147,8 @@ const ShopDashboard = () => {
   useEffect(() => {
     if (socket && shop) {
       socket.emit('join_shop', shop._id);
-
+      
       const handleNewOrder = (newOrder: any) => {
-        // Play notification sound if possible
-        try { new Audio('/notification.mp3').play(); } catch(_) {}
         toast(() => (
           <div className="flex items-center gap-2">
             <span className="text-xl">🔔</span>
@@ -172,8 +157,8 @@ const ShopDashboard = () => {
                <p className="text-sm">#{newOrder._id.slice(-4)} • ₹{newOrder.totalAmount}</p>
             </div>
           </div>
-        ), { duration: 8000, position: 'top-right' });
-
+        ), { duration: 5000, position: 'top-right' });
+        
         setOrders(prev => {
            const updated = [newOrder, ...prev];
            updateStats(updated);
@@ -191,9 +176,9 @@ const ShopDashboard = () => {
 
       socket.on('new_order', handleNewOrder);
       socket.on('order_updated', handleOrderUpdate);
-      socket.on('order_status_updated', handleOrderUpdate);
+      socket.on('order_status_updated', handleOrderUpdate); // Listen to this too for status changes
 
-      return () => {
+      return () => { 
          socket.off('new_order', handleNewOrder);
          socket.off('order_updated', handleOrderUpdate);
          socket.off('order_status_updated', handleOrderUpdate);
@@ -203,9 +188,13 @@ const ShopDashboard = () => {
 
 
   const markCompleted = async (orderId: string) => {
-    // Prompt shop to use pickup code verification instead
-    setVerifyOrderId(orderId);
-    setPickupCodeInput('');
+    try {
+      await api.put(`/orders/${orderId}/status`, { status: 'COMPLETED' });
+      const updatedOrders = orders.map(o => o._id === orderId ? { ...o, orderStatus: 'COMPLETED' } : o);
+      setOrders(updatedOrders);
+      updateStats(updatedOrders);
+      toast.success('Order Completed');
+    } catch (error) { toast.error('Failed to update status'); }
   };
 
   const cancelOrder = async (orderId: string) => {
@@ -217,46 +206,6 @@ const ShopDashboard = () => {
       updateStats(updatedOrders);
       toast.success('Order Cancelled');
     } catch (error) { toast.error('Failed to cancel order'); }
-  };
-
-  const markPrinting = async (orderId: string) => {
-    try {
-      await api.put(`/orders/${orderId}/status`, { status: 'PRINTING' });
-      const updatedOrders = orders.map(o => o._id === orderId ? { ...o, orderStatus: 'PRINTING' } : o);
-      setOrders(updatedOrders);
-      updateStats(updatedOrders);
-      toast.success('Order marked as Printing');
-    } catch (error) { toast.error('Failed to update status'); }
-  };
-
-  const markReady = async (orderId: string) => {
-    try {
-      await api.put(`/orders/${orderId}/status`, { status: 'READY' });
-      const updatedOrders = orders.map(o => o._id === orderId ? { ...o, orderStatus: 'READY' } : o);
-      setOrders(updatedOrders);
-      updateStats(updatedOrders);
-      toast.success('Customer notified — order READY for pickup!');
-    } catch (error) { toast.error('Failed to update status'); }
-  };
-
-  const handleVerifyPickupCode = async () => {
-    if (!verifyOrderId || !pickupCodeInput.trim()) return;
-    setIsVerifying(true);
-    try {
-      const { data } = await api.post(`/orders/${verifyOrderId}/verify-pickup`, {
-        pickupCode: pickupCodeInput.trim()
-      });
-      toast.success('Pickup verified! Order marked COMPLETED.');
-      const updatedOrders = orders.map(o => o._id === verifyOrderId ? data.order : o);
-      setOrders(updatedOrders);
-      updateStats(updatedOrders);
-      setVerifyOrderId(null);
-      setPickupCodeInput('');
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Invalid pickup code');
-    } finally {
-      setIsVerifying(false);
-    }
   };
 
   const [toggling, setToggling] = useState(false);
@@ -347,7 +296,7 @@ const ShopDashboard = () => {
   };
 
   const filteredOrders = orders.filter(o => {
-    if (activeTab === 'active') return ['QUEUED', 'PRINTING', 'READY'].includes(o.orderStatus) && o.paymentStatus === 'PAID';
+    if (activeTab === 'active') return ['QUEUED', 'PRINTING', 'READY'].includes(o.orderStatus);
     return ['COMPLETED', 'CANCELLED'].includes(o.orderStatus);
   });
 
@@ -497,26 +446,16 @@ const ShopDashboard = () => {
                         </td>
                         <td className="p-4">
                           {order.orderStatus === 'QUEUED' ? (
-                            <div className="flex flex-col gap-2">
-                              <button onClick={() => markPrinting(order._id)} className="btn bg-blue-600 text-white hover:bg-blue-700 text-xs py-2 px-3 shadow-none flex items-center gap-1">
-                                <Printer size={14} /> Start Printing
+                            <div className="flex gap-2">
+                              <button onClick={() => markCompleted(order._id)} className="btn bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 text-xs py-2 px-4 shadow-none flex items-center gap-2">
+                                <CheckCircle size={16} /> Mark Done
                               </button>
-                              <button onClick={() => cancelOrder(order._id)} className="btn bg-white dark:bg-slate-800 text-red-500 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/30 text-xs py-1 px-3 shadow-none" title="Cancel">
-                                <X size={14} />
-                              </button>
-                            </div>
-                          ) : order.orderStatus === 'PRINTING' ? (
-                            <div className="flex flex-col gap-2">
-                              <button onClick={() => markReady(order._id)} className="btn bg-green-600 text-white hover:bg-green-700 text-xs py-2 px-3 shadow-none flex items-center gap-1">
-                                <CheckCircle size={14} /> Mark Ready
+                              <button onClick={() => cancelOrder(order._id)} className="btn bg-white dark:bg-slate-800 text-red-500 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/30 text-xs py-2 px-3 shadow-none" title="Cancel & Refund">
+                                <X size={16} />
                               </button>
                             </div>
-                          ) : order.orderStatus === 'READY' ? (
-                            <button onClick={() => markCompleted(order._id)} className="btn bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 text-xs py-2 px-3 shadow-none flex items-center gap-2">
-                              🔑 Verify Code
-                            </button>
                           ) : (
-                            <span className="text-slate-400 text-sm">Archived</span>
+                            <span className="text-slate-600 dark:text-slate-400 text-sm">Archived</span>
                           )}
                         </td>
                       </tr>
@@ -630,38 +569,6 @@ const ShopDashboard = () => {
                  <button onClick={() => setShowQR(false)} className="btn btn-outline">Close</button>
               </div>
            </div>
-        </div>
-      )}
-
-      {/* 4. Pickup Code Verification Modal */}
-      {verifyOrderId && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 w-full max-w-sm rounded-2xl p-6 shadow-xl animate-in fade-in zoom-in duration-200">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">🔑 Verify Pickup</h3>
-              <button onClick={() => setVerifyOrderId(null)}><X size={24} className="text-slate-400 hover:text-red-500"/></button>
-            </div>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-              Ask the customer for their 4-digit pickup code to confirm identity and complete the order.
-            </p>
-            <input
-              type="text"
-              maxLength={4}
-              placeholder="Enter 4-digit code"
-              className="input-field text-center text-3xl font-mono tracking-[0.5em] mb-4"
-              value={pickupCodeInput}
-              onChange={e => setPickupCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              onKeyDown={e => e.key === 'Enter' && handleVerifyPickupCode()}
-              autoFocus
-            />
-            <button
-              onClick={handleVerifyPickupCode}
-              disabled={pickupCodeInput.length !== 4 || isVerifying}
-              className="w-full btn btn-primary flex justify-center items-center gap-2 disabled:opacity-50"
-            >
-              {isVerifying ? 'Verifying...' : '✓ Confirm & Complete Order'}
-            </button>
-          </div>
         </div>
       )}
 
