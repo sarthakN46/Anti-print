@@ -37,8 +37,8 @@ const ShopDashboard = () => {
   const [showEmployeeModal, setShowEmployeeModal] = useState(false);
   const [showQR, setShowQR] = useState(false);
   
-  // PDF Pre-fetching Cache
-  const [pdfCache, setPdfCache] = useState<Record<string, string>>({});
+  // Pre-fetching Cache: stores { url: blobUrl, type: 'pdf' | 'img' }
+  const [pdfCache, setPdfCache] = useState<Record<string, { url: string; type: string }>>({});
   const fetchQueue = React.useRef<Set<string>>(new Set());
 
   // Print State
@@ -237,20 +237,22 @@ const ShopDashboard = () => {
     }
   }, [socket, shop]);
 
-  // Function to prefetch PDF
+  // Function to prefetch file (PDF or image) via blob
   const prefetchPdf = async (storageKey: string) => {
     if (pdfCache[storageKey] || fetchQueue.current.has(storageKey)) return;
     fetchQueue.current.add(storageKey);
 
     try {
-      const { data } = await api.post('/upload/preview-url', { storageKey });
-      const presignedUrl = data.previewUrl;
-      const response = await fetch(presignedUrl);
-      if (!response.ok) throw new Error('Network response was not ok');
-      const blob = await response.blob();
+      const response = await api.post('/upload/preview-pdf', { storageKey }, {
+        responseType: 'blob'
+      });
+
+      const blob = new Blob([response.data], { type: response.headers['content-type'] });
       const objectUrl = URL.createObjectURL(blob);
+      const contentType = response.headers['content-type'] || '';
+      const fileType = contentType.startsWith('image/') ? 'img' : 'pdf';
       
-      setPdfCache(prev => ({ ...prev, [storageKey]: objectUrl }));
+      setPdfCache(prev => ({ ...prev, [storageKey]: { url: objectUrl, type: fileType } }));
 
       // 10-Minute Expiry
       setTimeout(() => {
@@ -264,7 +266,7 @@ const ShopDashboard = () => {
       }, 10 * 60 * 1000);
 
     } catch (e) {
-      console.error('Failed to prefetch PDF:', e);
+      console.error('Failed to prefetch file:', e);
       fetchQueue.current.delete(storageKey);
     }
   };
@@ -351,6 +353,7 @@ const ShopDashboard = () => {
       try {
         toast.loading('Loading document...', { id: 'preview-loader' });
         
+        // Get download URL for the "Download" button
         try {
            const { data } = await api.post('/upload/download-url', { storageKey: originalKey, originalName });
            setDownloadUrl(data.downloadUrl);
@@ -360,29 +363,32 @@ const ShopDashboard = () => {
         }
         setPreviewOriginalName(originalName);
 
-        const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(originalName);
-        const printType = isImage ? 'img' : 'pdf';
-
         // If we have a cached Blob URL, use it instantly!
         if (pdfCache[previewKey]) {
-           setPreviewUrl(pdfCache[previewKey]);
-           setPreviewType(printType); 
+           const cached = pdfCache[previewKey];
+           setPreviewUrl(cached.url);
+           setPreviewType(cached.type);
            toast.dismiss('preview-loader');
-           if (autoPrint) {
-              if (printType === 'img') {
-                 setAutoPrintTriggered(true); // Let useEffect handle img printing to ensure DOM/window works
-              } else {
-                 printJS({ printable: pdfCache[previewKey], type: 'pdf', showModal: true });
-              }
-           }
+           if (autoPrint) setAutoPrintTriggered(true);
            return;
         }
 
-        // Fallback: Fetch signed URL instantly without buffering on backend
-        const { data } = await api.post('/upload/preview-url', { storageKey: previewKey });
-        setPreviewUrl(data.previewUrl);
-        setPreviewType(printType); 
-        
+        // Fetch actual file bytes via blob endpoint (handles both images and PDFs)
+        const response = await api.post('/upload/preview-pdf', { storageKey: previewKey }, {
+           responseType: 'blob'
+        });
+
+        const blob = new Blob([response.data], { type: response.headers['content-type'] });
+        const url = URL.createObjectURL(blob);
+        const contentType = response.headers['content-type'] || '';
+
+        if (contentType.startsWith('image/')) {
+           setPreviewType('img');
+        } else {
+           setPreviewType('pdf');
+        }
+
+        setPreviewUrl(url);
         toast.dismiss('preview-loader');
         
         if (autoPrint) setAutoPrintTriggered(true);

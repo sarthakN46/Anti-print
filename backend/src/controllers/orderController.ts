@@ -331,6 +331,64 @@ export const verifyPaymentRedirect = async (req: any, res: Response): Promise<vo
   }
 };
 
+// @desc    Background worker to reconcile stuck PENDING_PAYMENT orders
+export const reconcilePendingOrders = async (): Promise<void> => {
+  try {
+    const now = Date.now();
+    const FIFTEEN_MINUTES = 15 * 60 * 1000;
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+    
+    const fifteenMinutesAgo = new Date(now - FIFTEEN_MINUTES);
+    const twentyFourHoursAgo = new Date(now - TWENTY_FOUR_HOURS);
+    
+    const stuckOrders = await Order.find({
+      orderStatus: 'PENDING_PAYMENT',
+      razorpayOrderId: { $exists: true },
+      createdAt: { $lt: fifteenMinutesAgo, $gte: twentyFourHoursAgo }
+    });
+
+    if (stuckOrders.length === 0) return;
+    
+    console.log(`🔍 Reconciling ${stuckOrders.length} pending orders with Razorpay...`);
+    
+    for (const order of stuckOrders) {
+      try {
+        const payments = await razorpay.orders.fetchPayments(order.razorpayOrderId as string);
+        const successfulPayment = payments.items.find((p: any) => p.status === 'captured' || p.status === 'authorized');
+        
+        if (successfulPayment) {
+          console.log(`✅ Order ${order._id} was paid successfully. Auto-verifying...`);
+          order.paymentStatus = 'PAID';
+          order.paymentId = successfulPayment.id;
+          order.orderStatus = 'QUEUED';
+          await order.save();
+          
+          await order.populate('user', 'name email');
+          
+          try {
+            const io = getIO();
+            const userId = order.user && (order.user as any)._id ? (order.user as any)._id.toString() : order.user?.toString();
+            if (userId) io.to(userId).emit('order_status_updated', order);
+          } catch (e) {}
+          
+          processOrderFiles(order._id.toString());
+        } else {
+          // If 2 hours have passed and no payment, auto-cancel
+          const TWO_HOURS = 2 * 60 * 60 * 1000;
+          if (now - new Date((order as any).createdAt).getTime() > TWO_HOURS) {
+            order.orderStatus = 'CANCELLED';
+            await order.save();
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to reconcile order ${order._id}:`, err);
+      }
+    }
+  } catch (err) {
+    console.error('Error in reconcilePendingOrders:', err);
+  }
+};
+
 // @desc    Get Orders for My Shop
 // @route   GET /api/orders/shop
 // @access  Private (Owner/Employee)
