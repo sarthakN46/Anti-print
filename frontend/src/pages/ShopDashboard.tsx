@@ -170,7 +170,24 @@ const ShopDashboard = () => {
        printWindow.document.close();
     } else {
        // PDF (including backend-converted DOC/PPT/XLS)
-       printJS({ printable: previewUrl, type: 'pdf', showModal: true });
+       // print-js sometimes fails with blob: URLs directly, so we convert it to base64 first
+       toast.loading('Preparing document for print...', { id: 'print-prep' });
+       fetch(previewUrl)
+         .then(res => res.blob())
+         .then(blob => {
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = () => {
+               const base64data = (reader.result as string).split(',')[1];
+               printJS({ printable: base64data, type: 'pdf', base64: true, showModal: true });
+               toast.dismiss('print-prep');
+            };
+         })
+         .catch(err => {
+            console.error('Print prep error:', err);
+            toast.dismiss('print-prep');
+            toast.error('Failed to prepare document for printing');
+         });
     }
   };
 
