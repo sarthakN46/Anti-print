@@ -653,7 +653,9 @@ const UserDashboard = () => {
               <Store className="text-primary" size={22} />
               <div className="flex flex-col">
                  <span className="hidden xs:inline">XeroxSaaS</span>
-                 <span className="text-xs font-normal text-slate-500 dark:text-slate-400">Hi, {user?.name}</span>
+                 <button onClick={() => { logout(); navigate('/login'); }} className="text-xs font-normal text-slate-500 dark:text-slate-400 hover:text-red-500 transition-colors text-left flex items-center gap-1" title="Click to Logout">
+                   Hi, {user?.name} <LogOut size={10} />
+                 </button>
               </div>
             </h1>
 
