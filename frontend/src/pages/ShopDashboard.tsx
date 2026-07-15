@@ -347,38 +347,45 @@ const ShopDashboard = () => {
     } catch (_e) { toast.error('Failed to add employee'); }
   };
 
-  const openPreview = async (previewKey: string, originalKey: string, originalName: string, autoPrint = false) => {
-     try {
-       toast.loading('Loading document...', { id: 'preview-loader' });
-       
-       try {
-          const { data } = await api.post('/upload/download-url', { storageKey: originalKey, originalName });
-          setDownloadUrl(data.downloadUrl);
-       } catch (e) {
-          console.error("Failed to get download URL:", e);
-          setDownloadUrl(null);
-       }
-       setPreviewOriginalName(originalName);
+   const openPreview = async (previewKey: string, originalKey: string, originalName: string, autoPrint = false) => {
+      try {
+        toast.loading('Loading document...', { id: 'preview-loader' });
+        
+        try {
+           const { data } = await api.post('/upload/download-url', { storageKey: originalKey, originalName });
+           setDownloadUrl(data.downloadUrl);
+        } catch (e) {
+           console.error("Failed to get download URL:", e);
+           setDownloadUrl(null);
+        }
+        setPreviewOriginalName(originalName);
 
-       // If we have a cached Blob URL, use it instantly!
-       if (pdfCache[previewKey]) {
-          setPreviewUrl(pdfCache[previewKey]);
-          setPreviewType('pdf'); // Pre-fetched converted keys are always PDFs
-          toast.dismiss('preview-loader');
-          if (autoPrint) {
-             printJS({ printable: pdfCache[previewKey], type: 'pdf', showModal: true });
-          }
-          return;
-       }
+        const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(originalName);
+        const printType = isImage ? 'img' : 'pdf';
 
-       // Fallback: Fetch signed URL instantly without buffering on backend
-       const { data } = await api.post('/upload/preview-url', { storageKey: previewKey });
-       setPreviewUrl(data.previewUrl);
-       setPreviewType('pdf'); // Let browser viewer handle it
-       
-       toast.dismiss('preview-loader');
-       
-       if (autoPrint) setAutoPrintTriggered(true);
+        // If we have a cached Blob URL, use it instantly!
+        if (pdfCache[previewKey]) {
+           setPreviewUrl(pdfCache[previewKey]);
+           setPreviewType(printType); 
+           toast.dismiss('preview-loader');
+           if (autoPrint) {
+              if (printType === 'img') {
+                 setAutoPrintTriggered(true); // Let useEffect handle img printing to ensure DOM/window works
+              } else {
+                 printJS({ printable: pdfCache[previewKey], type: 'pdf', showModal: true });
+              }
+           }
+           return;
+        }
+
+        // Fallback: Fetch signed URL instantly without buffering on backend
+        const { data } = await api.post('/upload/preview-url', { storageKey: previewKey });
+        setPreviewUrl(data.previewUrl);
+        setPreviewType(printType); 
+        
+        toast.dismiss('preview-loader');
+        
+        if (autoPrint) setAutoPrintTriggered(true);
 
      } catch (_e) { 
         toast.dismiss('preview-loader');

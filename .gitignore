@@ -9,7 +9,7 @@ build/
 .env
 .env.*
 *.env
-
+Anti-print-1.env
 # Testing
 coverage/
 

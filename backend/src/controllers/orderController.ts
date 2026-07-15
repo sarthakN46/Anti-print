@@ -277,10 +277,11 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
 export const verifyPaymentRedirect = async (req: any, res: Response): Promise<void> => {
   try {
     const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+    const frontendBaseUrl = req.query.frontend ? String(req.query.frontend) : (process.env.CLIENT_URL || 'http://localhost:5173');
     
     const order = await Order.findOne({ razorpayOrderId: razorpay_order_id });
     if (!order) {
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/user/dashboard?error=OrderNotFound`);
+      res.redirect(`${frontendBaseUrl}/user/dashboard?error=OrderNotFound`);
       return;
     }
 
@@ -294,7 +295,7 @@ export const verifyPaymentRedirect = async (req: any, res: Response): Promise<vo
        order.paymentStatus = 'FAILED';
        order.orderStatus = 'CANCELLED';
        await order.save();
-       res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/user/dashboard?error=InvalidSignature`);
+       res.redirect(`${frontendBaseUrl}/user/dashboard?error=InvalidSignature`);
        return;
     }
 
@@ -322,10 +323,11 @@ export const verifyPaymentRedirect = async (req: any, res: Response): Promise<vo
       processOrderFiles(order._id.toString());
     }
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/user/dashboard?success=true`);
+    res.redirect(`${frontendBaseUrl}/user/dashboard?success=true`);
   } catch (error) {
     console.error("Redirect Verification Error:", error);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/user/dashboard?error=VerificationFailed`);
+    const frontendBaseUrl = req.query.frontend ? String(req.query.frontend) : (process.env.CLIENT_URL || 'http://localhost:5173');
+    res.redirect(`${frontendBaseUrl}/user/dashboard?error=VerificationFailed`);
   }
 };
 
