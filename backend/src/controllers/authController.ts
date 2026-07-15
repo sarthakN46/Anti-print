@@ -125,17 +125,8 @@ export const registerShopOwner = async (req: Request, res: Response): Promise<vo
     // 2. Check if user exists
     const userExists = await User.findOne({ email: email.toLowerCase().trim() });
     if (userExists) {
-      // Check if this user has completed shop setup
-      const existingShop = await Shop.findOne({ owner: userExists._id });
-      
-      if (existingShop) {
-        res.status(400).json({ message: 'User already exists' });
-        return;
-      }
-
-      // User exists but NO SHOP -> Incomplete registration.
-      // Delete the orphan user and allow re-registration.
-      await User.deleteOne({ _id: userExists._id });
+      res.status(400).json({ message: 'Email already registered. Please log in.' });
+      return;
     }
 
     // 3. Hash password (increased salt rounds)

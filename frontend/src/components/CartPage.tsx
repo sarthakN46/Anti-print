@@ -1,4 +1,4 @@
-import { ArrowLeft, FileText, Trash2, ShoppingCart, Image as ImageIcon, Presentation, FileSpreadsheet } from 'lucide-react';
+import { ArrowLeft, FileText, Trash2, ShoppingCart, Image as ImageIcon, Presentation, FileSpreadsheet, Loader2 } from 'lucide-react';
 import type { ConfiguratorItem } from './DocumentConfigurator';
 
 interface CartPageProps {
@@ -12,6 +12,7 @@ interface CartPageProps {
   onBack: () => void;
   onRemoveItem: (index: number) => void;
   onConfirmPay: () => void;
+  isProcessing?: boolean;
 }
 
 const CartPage = ({
@@ -21,6 +22,7 @@ const CartPage = ({
   onBack,
   onRemoveItem,
   onConfirmPay,
+  isProcessing = false,
 }: CartPageProps) => {
   const getRate = (item: ConfiguratorItem) => {
     const size = item.config.paperSize;
@@ -173,9 +175,14 @@ const CartPage = ({
 
           <button
             onClick={onConfirmPay}
-            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3.5 rounded-xl text-base shadow-lg shadow-green-500/25 active:scale-[0.97] transition-all"
+            disabled={isProcessing}
+            className={`w-full font-bold py-3.5 rounded-xl text-base shadow-lg active:scale-[0.97] transition-all flex items-center justify-center gap-2 ${isProcessing ? 'bg-green-400 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600 shadow-green-500/25'} text-white`}
           >
-            Confirm & Pay
+            {isProcessing ? (
+              <><Loader2 size={18} className="animate-spin" /> Processing...</>
+            ) : (
+              'Confirm & Pay'
+            )}
           </button>
         </div>
       )}

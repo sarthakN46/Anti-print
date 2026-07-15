@@ -50,6 +50,9 @@ const UserDashboard = () => {
   const [completedOrder, setCompletedOrder] = useState<any>(null);
   const [refundNotification, setRefundNotification] = useState<any>(null);
 
+  // Processing guard (prevents double-clicks)
+  const [isProcessing, setIsProcessing] = useState(false);
+
   // File input ref for "Add files" in configurator
   const addFilesInputRef = useRef<HTMLInputElement>(null);
 
@@ -142,7 +145,7 @@ const UserDashboard = () => {
             const { latitude, longitude } = position.coords;
             const shopsWithDistance = data.map((shop: any) => {
                if(shop.location && shop.location.coordinates) {
-                   const [sLat, sLng] = shop.location.coordinates;
+                   const [sLng, sLat] = shop.location.coordinates;
                    return { ...shop, distance: getDistance(latitude, longitude, sLat, sLng) };
                }
                return { ...shop, distance: 9999 };
@@ -528,7 +531,8 @@ const UserDashboard = () => {
 
   // --- CHECKOUT (Razorpay) ---
   const handleCheckout = async () => {
-    if (cart.length === 0 || !selectedShop) return;
+    if (cart.length === 0 || !selectedShop || isProcessing) return;
+    setIsProcessing(true);
     
     const total = calculateTotal();
     if (total < 1) {
@@ -630,6 +634,8 @@ const UserDashboard = () => {
 
     } catch (_err) {
       toast.error('Order processing failed');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -712,7 +718,7 @@ const UserDashboard = () => {
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                      />
                      {shops.map(shop => {
-                        const [lat, lng] = shop.location?.coordinates || [0, 0];
+                        const [lng, lat] = shop.location?.coordinates || [0, 0];
                         if(lat === 0 && lng === 0) return null;
                         return (
                            <Marker key={shop._id} position={[lat, lng]}>
@@ -940,6 +946,7 @@ const UserDashboard = () => {
           onBack={() => setStep('upload')}
           onRemoveItem={handleRemoveFromCart}
           onConfirmPay={handleCheckout}
+          isProcessing={isProcessing}
         />
         {completedOrder && (
            <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">

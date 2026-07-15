@@ -7,6 +7,7 @@ import { processOrderFiles } from '../services/conversionService';
 import { getIO } from '../utils/socket';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import UploadMetadata from '../models/UploadMetadata';
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -38,7 +39,7 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
       totalAmount: 0,
       pickupCode: generatePickupCode(),
       paymentStatus: 'PENDING',
-      orderStatus: 'QUEUED'
+      orderStatus: 'PENDING_PAYMENT'
     });
 
     // 2. Process Items & Move Files
@@ -61,8 +62,12 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
        
        let fileCost = 0;
        
+       // SECURITY: Fetch trusted pageCount from DB to prevent frontend tampering
+       const metadata = await UploadMetadata.findOne({ storageKey: item.storageKey });
+       const trustedPageCount = metadata ? metadata.pageCount : item.pageCount;
+
        // Calculate Total Sheets (Logical Pages)
-       const totalSheets = item.pageCount * item.config.copies;
+       const totalSheets = trustedPageCount * item.config.copies;
 
        let rate = 0;
 
@@ -225,7 +230,7 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
     // Update Order
     order.paymentStatus = 'PAID';
     order.paymentId = razorpay_payment_id;
-    order.orderStatus = 'PROCESSING'; // Set to PROCESSING while converting
+    order.orderStatus = 'QUEUED'; // Only visible to shop after payment succeeds
     await order.save();
 
     // Populate User for Socket Emission
@@ -274,9 +279,9 @@ export const getShopOrders = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     // 2. Get orders, sort by newest
-    const orders = await Order.find({ shop: shop._id })
+    const orders = await Order.find({ shop: shop._id, orderStatus: { $ne: 'PENDING_PAYMENT' } })
       .populate('user', 'name email') 
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: 1 }); // FIFO: oldest first
 
     res.json(orders);
   } catch (error) {
@@ -365,8 +370,8 @@ export const cancelOrder = async (req: AuthRequest, res: Response): Promise<void
        return;
     }
 
-    // Can only cancel if QUEUED
-    if (order.orderStatus !== 'QUEUED') {
+    // Can only cancel if QUEUED or PENDING_PAYMENT
+    if (order.orderStatus !== 'QUEUED' && order.orderStatus !== 'PENDING_PAYMENT') {
        res.status(400).json({ message: 'Cannot cancel order in progress or already completed' });
        return;
     }
@@ -499,5 +504,86 @@ export const getMyOrders = async (req: AuthRequest, res: Response): Promise<void
     res.json(orders);
   } catch (error) {
     res.status(500).json({ message: 'Server Error' });
+  }
+};
+
+// @desc    Cancel ALL Queued Orders for Shop (with Refunds)
+// @route   PUT /api/orders/cancel-all
+// @access  Private (Owner/Employee)
+export const cancelAllOrders = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // 1. Find the shop
+    let shop;
+    if (req.user?.role === 'EMPLOYEE') {
+       shop = await Shop.findById(req.user.associatedShop);
+    } else {
+       shop = await Shop.findOne({ owner: req.user?._id });
+    }
+
+    if (!shop) {
+      res.status(404).json({ message: 'Shop not found' });
+      return;
+    }
+
+    // 2. Find all QUEUED orders for this shop
+    const queuedOrders = await Order.find({ shop: shop._id, orderStatus: 'QUEUED' }).populate('user', 'name email');
+
+    if (queuedOrders.length === 0) {
+      res.status(400).json({ message: 'No queued orders to cancel' });
+      return;
+    }
+
+    let refundedCount = 0;
+    let failedRefunds = 0;
+
+    // 3. Cancel each order and issue refund
+    for (const order of queuedOrders) {
+      // Refund if paid
+      if (order.paymentStatus === 'PAID' && order.paymentId) {
+        try {
+          await razorpay.payments.refund(order.paymentId, { speed: 'normal' });
+          order.paymentStatus = 'REFUNDED';
+          refundedCount++;
+        } catch (refundError) {
+          console.error(`Refund failed for order ${order._id}:`, refundError);
+          failedRefunds++;
+        }
+      }
+
+      order.orderStatus = 'CANCELLED';
+      await order.save();
+
+      // Notify user via socket
+      try {
+        const io = getIO();
+        const userId = order.user && (order.user as any)._id ? (order.user as any)._id.toString() : order.user?.toString();
+        if (userId) {
+          io.to(userId).emit('order_status_updated', order);
+          io.to(userId).emit('notification', {
+            message: `Order #${order._id.toString().slice(-4)} cancelled by shop. Refund initiated.`,
+            type: 'info'
+          });
+        }
+      } catch (e) {
+        console.error('Socket emission failed', e);
+      }
+    }
+
+    // Notify shop
+    try {
+      const io = getIO();
+      io.to(shop._id.toString()).emit('orders_cancelled_all', { count: queuedOrders.length });
+    } catch (e) {}
+
+    res.json({
+      message: `Cancelled ${queuedOrders.length} order(s). Refunded: ${refundedCount}. Failed refunds: ${failedRefunds}.`,
+      cancelledCount: queuedOrders.length,
+      refundedCount,
+      failedRefunds
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Failed to cancel all orders' });
   }
 };

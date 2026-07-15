@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import Shop, { IShop } from '../models/Shop';
+import Order from '../models/Order';
 import User from '../models/User';
 import bcrypt from 'bcryptjs';
 import { AuthRequest } from '../middlewares/authMiddleware';
@@ -113,7 +114,7 @@ export const getAllShops = async (req: Request, res: Response): Promise<void> =>
        const userLng = parseFloat(lng as string);
 
        shops = shops.map((shop: any) => {
-          const [sLat, sLng] = shop.location?.coordinates || [0,0];
+          const [sLng, sLat] = shop.location?.coordinates || [0,0];
           // Simple Haversine (or just Euclidean for sort)
           const dist = Math.sqrt(Math.pow(sLat - userLat, 2) + Math.pow(sLng - userLng, 2));
           return { ...shop, distance: dist }; // 'distance' here is abstract degree-diff
@@ -239,6 +240,15 @@ export const toggleShopStatus = async (req: AuthRequest, res: Response): Promise
     }
 
     const newStatus = shop.status === 'OPEN' ? 'CLOSED' : 'OPEN';
+
+    // GUARD: Cannot close shop if there are queued orders
+    if (newStatus === 'CLOSED') {
+      const queuedCount = await Order.countDocuments({ shop: shop._id, orderStatus: 'QUEUED' });
+      if (queuedCount > 0) {
+        res.status(400).json({ message: `Cannot close shop. ${queuedCount} order(s) are still in queue. Cancel them first.` });
+        return;
+      }
+    }
 
     // 2. Use findOneAndUpdate to bypass full document validation (safe for legacy data)
     const updatedShop = await Shop.findByIdAndUpdate(
