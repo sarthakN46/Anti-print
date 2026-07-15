@@ -1,4 +1,4 @@
-# Dependencies
+﻿# Dependencies
 node_modules/
 
 # Production build
@@ -31,3 +31,13 @@ yarn-error.log*
 
 # Docker
 docker-data/
+
+# Local Devops
+.bin/
+AWS guides/
+devops-documentation/
+setup-devops.bat
+start-devops.bat
+stop-devops.bat
+backend/.mongo-cache/
+backend/test.pdf

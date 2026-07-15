@@ -95,7 +95,7 @@ const ShopSetup = () => {
       await api.post('/shops', {
         name: formData.name,
         address: formData.manualAddress, // Use Manual Address for DB
-        location: { coordinates: coords },
+        location: { coordinates: [coords[1], coords[0]] },
         image: imgUrl
       });
 

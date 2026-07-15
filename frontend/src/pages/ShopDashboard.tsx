@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { LayoutDashboard, LogOut, Printer, RefreshCw, CheckCircle, Clock, FileText, Layers, Palette, Power, UserPlus, X, Settings, QrCode, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, LogOut, Printer, RefreshCw, CheckCircle, Clock, FileText, Layers, Palette, Power, UserPlus, X, Settings, QrCode, HelpCircle, Search, XCircle, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import QRCode from 'react-qr-code';
@@ -44,6 +44,12 @@ const ShopDashboard = () => {
   const [empName, setEmpName] = useState('');
   const [empEmail, setEmpEmail] = useState('');
   const [empPass, setEmpPass] = useState('');
+
+  // Processing guard for double-click prevention
+  const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
+
+  // Search query for filtering orders by ID
+  const [searchQuery, setSearchQuery] = useState('');
 
   const downloadQR = () => {
      // ... (Existing QR logic)
@@ -229,6 +235,8 @@ const ShopDashboard = () => {
 
 
   const markCompleted = async (orderId: string) => {
+    if (processingOrderId) return;
+    setProcessingOrderId(orderId);
     try {
       await api.put(`/orders/${orderId}/status`, { status: 'COMPLETED' });
       const updatedOrders = orders.map(o => o._id === orderId ? { ...o, orderStatus: 'COMPLETED' } : o);
@@ -236,10 +244,13 @@ const ShopDashboard = () => {
       updateStats(updatedOrders);
       toast.success('Order Completed');
     } catch (_error) { toast.error('Failed to update status'); }
+    finally { setProcessingOrderId(null); }
   };
 
   const cancelOrder = async (orderId: string) => {
+    if (processingOrderId) return;
     if (!window.confirm('Cancel this order? Refund will be recorded.')) return;
+    setProcessingOrderId(orderId);
     try {
       const { data } = await api.put(`/orders/${orderId}/cancel`);
       const updatedOrders = orders.map(o => o._id === orderId ? data.order : o);
@@ -247,6 +258,20 @@ const ShopDashboard = () => {
       updateStats(updatedOrders);
       toast.success('Order Cancelled');
     } catch (_error) { toast.error('Failed to cancel order'); }
+    finally { setProcessingOrderId(null); }
+  };
+
+  const cancelAllOrders = async () => {
+    if (processingOrderId) return;
+    const queuedCount = orders.filter(o => o.orderStatus === 'QUEUED').length;
+    if (!window.confirm(`Cancel ALL ${queuedCount} queued order(s)? Refunds will be issued to all customers.`)) return;
+    setProcessingOrderId('cancel-all');
+    try {
+      const { data } = await api.put('/orders/cancel-all');
+      toast.success(data.message);
+      fetchOrders();
+    } catch (_error) { toast.error('Failed to cancel all orders'); }
+    finally { setProcessingOrderId(null); }
   };
 
   const [toggling, setToggling] = useState(false);
@@ -333,23 +358,32 @@ const ShopDashboard = () => {
       </div>
   );
 
-  // Improved Distinct Color Generator
+  // Improved Distinct Color Generator — excludes green and red hues to avoid status confusion
   const getUserColor = (id: string) => {
     if (!id) return '#f8fafc';
     let hash = 0;
     for (let i = 0; i < id.length; i++) {
       hash = ((hash << 5) - hash) + id.charCodeAt(i);
-      hash |= 0; // Convert to 32bit integer
+      hash |= 0;
     }
-    const h = Math.abs(hash) % 360;
-    // High saturation, High lightness for pastel-like but distinct background
-    return `hsl(${h}, 85%, 92%)`; 
+    // Exclude green (90-150) and red (0-30, 330-360) hues
+    const safeHues = [35, 45, 55, 190, 210, 230, 250, 270, 290, 310];
+    const h = safeHues[Math.abs(hash) % safeHues.length];
+    return `hsl(${h}, 70%, 93%)`; 
   };
 
-  const filteredOrders = orders.filter(o => {
+  let filteredOrders = orders.filter(o => {
     if (activeTab === 'active') return ['QUEUED', 'PRINTING', 'READY'].includes(o.orderStatus);
     return ['COMPLETED', 'CANCELLED'].includes(o.orderStatus);
   });
+
+  // Apply search filter
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    filteredOrders = filteredOrders.filter(o => o._id.toLowerCase().includes(q));
+  }
+
+  const hasQueuedOrders = orders.some(o => o.orderStatus === 'QUEUED');
 
   if (isMobile) {
     return (
@@ -440,13 +474,13 @@ const ShopDashboard = () => {
            {/* Stats */}
            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-              <p className="text-slate-500 dark:text-slate-400 text-sm mb-1">Queue Size</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.pending}</h3>
+              <p className="text-slate-900 font-bold dark:text-slate-300 text-sm mb-1">Queue Size</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.pending}</h3>
             </div>
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-              <p className="text-slate-500 dark:text-slate-400 text-sm mb-1">Completed Today</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.printed}</h3>
+              <p className="text-slate-900 font-bold dark:text-slate-300 text-sm mb-1">Completed Today</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.printed}</h3>
             </div>
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-              <p className="text-slate-500 dark:text-slate-400 text-sm mb-1">Revenue Estimate</p><h3 className="text-3xl font-bold text-primary-hover">₹{stats.revenue.toFixed(2)}</h3>
+              <p className="text-slate-900 font-bold dark:text-slate-300 text-sm mb-1">Revenue Estimate</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">₹{stats.revenue.toFixed(2)}</h3>
             </div>
           </div>
 
@@ -467,20 +501,46 @@ const ShopDashboard = () => {
                     Completed
                   </button>
                </div>
+
+               {/* Search & Cancel All */}
+               <div className="flex items-center gap-3">
+                 <div className="relative">
+                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                   <input
+                     type="text"
+                     placeholder="Search by Order ID..."
+                     value={searchQuery}
+                     onChange={e => setSearchQuery(e.target.value)}
+                     className="pl-8 pr-3 py-1.5 text-sm border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/30 w-48"
+                   />
+                 </div>
+                 {hasQueuedOrders && (
+                   <button
+                     onClick={cancelAllOrders}
+                     disabled={!!processingOrderId}
+                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 border border-red-200 dark:border-red-800 rounded-lg transition-colors"
+                   >
+                     <XCircle size={14} /> Cancel All
+                   </button>
+                 )}
+               </div>
             </div>
             
             <div className="overflow-auto flex-1">
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-xs uppercase font-semibold sticky top-0 z-10">
-                  <tr><th className="p-4">Order ID</th><th className="p-4">User</th><th className="p-4">Files & Config</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
+                  <tr><th className="p-4">Order ID</th><th className="p-4">Order Time</th><th className="p-4">User</th><th className="p-4">Files & Config</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                   {filteredOrders.length === 0 ? (
-                    <tr><td colSpan={5} className="p-8 text-center text-slate-400">No {activeTab} orders.</td></tr>
+                    <tr><td colSpan={6} className="p-8 text-center text-slate-400">No {activeTab} orders.</td></tr>
                   ) : (
                     filteredOrders.map((order) => (
-                      <tr key={order._id} style={{ backgroundColor: getUserColor(order.user?._id) }} className="hover:brightness-95 dark:hover:bg-slate-700 transition-colors dark:text-white">
+                      <tr key={order._id} style={{ backgroundColor: getUserColor(order.user?._id) }} className="hover:brightness-95 dark:hover:bg-slate-700 transition-colors dark:text-white border-b-2 border-slate-200 dark:border-slate-600">
                         <td className="p-4 font-mono text-sm font-bold text-slate-700 dark:text-slate-400">#{order._id.slice(-6)}</td>
+                        <td className="p-4 text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {new Date(order.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        </td>
                         <td className="p-4 font-medium text-slate-900 dark:text-white">
                            {order.user?.name || (order.user?.email ? order.user.email.split('@')[0] : 'Guest')}
                         </td>
@@ -509,7 +569,7 @@ const ShopDashboard = () => {
                           </div>
                         </td>
                         <td className="p-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 ${order.orderStatus === 'QUEUED' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'}`}>
+                          <span className="px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 border border-slate-900 text-slate-900 dark:border-slate-300 dark:text-slate-300">
                             {order.orderStatus === 'QUEUED' ? <Clock size={12}/> : <CheckCircle size={12}/>}
                             {order.orderStatus}
                           </span>
@@ -517,10 +577,10 @@ const ShopDashboard = () => {
                         <td className="p-4">
                           {order.orderStatus === 'QUEUED' ? (
                             <div className="flex gap-2">
-                              <button onClick={() => markCompleted(order._id)} className="btn bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 text-xs py-2 px-4 shadow-none flex items-center gap-2">
-                                <CheckCircle size={16} /> Mark Done
+                              <button onClick={() => markCompleted(order._id)} disabled={!!processingOrderId} className={`btn bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 text-xs py-2 px-4 shadow-none flex items-center gap-2 ${processingOrderId === order._id ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                {processingOrderId === order._id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={16} />} Mark Done
                               </button>
-                              <button onClick={() => cancelOrder(order._id)} className="btn bg-white dark:bg-slate-800 text-red-500 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/30 text-xs py-2 px-3 shadow-none" title="Cancel & Refund">
+                              <button onClick={() => cancelOrder(order._id)} disabled={!!processingOrderId} className={`btn bg-white dark:bg-slate-800 text-red-500 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/30 text-xs py-2 px-3 shadow-none ${processingOrderId ? 'opacity-50 cursor-not-allowed' : ''}`} title="Cancel & Refund">
                                 <X size={16} />
                               </button>
                             </div>
