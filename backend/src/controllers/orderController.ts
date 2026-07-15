@@ -17,6 +17,9 @@ const razorpay = new Razorpay({
 // Helper: Generate a random 4-digit pickup code
 const generatePickupCode = () => Math.floor(1000 + Math.random() * 9000).toString();
 
+// Helper: Strict Backblaze B2 S3 API URL encoding for CopySource
+const encodeS3URI = (str: string) => str.split('/').map(encodeURIComponent).join('/');
+
 // @desc    Create new print order
 // @route   POST /api/orders
 // @access  Private (User)
@@ -107,7 +110,7 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
        try {
           await s3.copyObject({
              Bucket: BUCKET_NAME,
-             CopySource: encodeURI(`${BUCKET_NAME}/${oldKey}`), // CopySource requires Bucket/Key (no leading slash for B2 compatibility)
+             CopySource: encodeS3URI(`${BUCKET_NAME}/${oldKey}`),
              Key: newKey
           }).promise();
 
@@ -181,12 +184,15 @@ export const createPaymentOrder = async (req: AuthRequest, res: Response): Promi
     };
 
     const razorpayOrder = await razorpay.orders.create(options);
-
+  
     if (!razorpayOrder) {
       res.status(500).json({ message: 'Razorpay order creation failed' });
       return;
     }
 
+    order.razorpayOrderId = razorpayOrder.id;
+    await order.save();
+  
     res.json({
       id: razorpayOrder.id,
       currency: razorpayOrder.currency,
@@ -213,6 +219,11 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
+    if (order.razorpayOrderId && order.razorpayOrderId !== razorpay_order_id) {
+      res.status(400).json({ message: 'Payment Order ID Mismatch' });
+      return;
+    }
+
     // Verify Signature
     const generated_signature = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
@@ -236,17 +247,17 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
     // Populate User for Socket Emission
     await order.populate('user', 'name email');
 
-    // Emit Socket Event (Only to User, Shop will be notified after conversion)
+    // Emit Socket Events (Only to User, Shop will be notified after conversion)
     try {
       const io = getIO();
-      // Safe ID Extraction
       const userId = order.user && (order.user as any)._id ? (order.user as any)._id.toString() : order.user?.toString();
-      
+
+      // Notify User
       if (userId) {
          io.to(userId).emit('order_status_updated', order);
       }
-    } catch (e) {
-      console.error('Socket emission failed', e);
+    } catch (socketError) {
+      console.error('Socket Emission Error:', socketError);
     }
 
     // Trigger Background Conversion (Fire & Forget)
@@ -257,6 +268,64 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
   } catch (error) {
     console.error("Verification Error:", error);
     res.status(500).json({ message: 'Payment verification failed' });
+  }
+};
+
+// @desc    Verify Payment via Razorpay Redirect
+// @route   POST /api/orders/verify-redirect
+// @access  Public (Called by Razorpay)
+export const verifyPaymentRedirect = async (req: any, res: Response): Promise<void> => {
+  try {
+    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+    
+    const order = await Order.findOne({ razorpayOrderId: razorpay_order_id });
+    if (!order) {
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/user/dashboard?error=OrderNotFound`);
+      return;
+    }
+
+    // Verify Signature
+    const generated_signature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
+      .update(razorpay_order_id + "|" + razorpay_payment_id)
+      .digest("hex");
+
+    if (generated_signature !== razorpay_signature) {
+       order.paymentStatus = 'FAILED';
+       order.orderStatus = 'CANCELLED';
+       await order.save();
+       res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/user/dashboard?error=InvalidSignature`);
+       return;
+    }
+
+    // Only update if not already paid
+    if (order.paymentStatus !== 'PAID') {
+      order.paymentStatus = 'PAID';
+      order.paymentId = razorpay_payment_id;
+      order.orderStatus = 'QUEUED';
+      await order.save();
+
+      await order.populate('user', 'name email');
+
+      try {
+        const io = getIO();
+        const userId = order.user && (order.user as any)._id ? (order.user as any)._id.toString() : order.user?.toString();
+
+        if (userId) {
+           io.to(userId).emit('order_status_updated', order);
+        }
+      } catch (socketError) {
+        console.error('Socket Emission Error:', socketError);
+      }
+      
+      // Trigger Background Conversion
+      processOrderFiles(order._id.toString());
+    }
+
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/user/dashboard?success=true`);
+  } catch (error) {
+    console.error("Redirect Verification Error:", error);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/user/dashboard?error=VerificationFailed`);
   }
 };
 

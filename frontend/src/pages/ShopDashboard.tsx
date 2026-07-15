@@ -365,7 +365,9 @@ const ShopDashboard = () => {
           setPreviewUrl(pdfCache[previewKey]);
           setPreviewType('pdf'); // Pre-fetched converted keys are always PDFs
           toast.dismiss('preview-loader');
-          if (autoPrint) setAutoPrintTriggered(true);
+          if (autoPrint) {
+             printJS({ printable: pdfCache[previewKey], type: 'pdf', showModal: true });
+          }
           return;
        }
 
