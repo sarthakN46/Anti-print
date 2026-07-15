@@ -603,7 +603,7 @@ const UserDashboard = () => {
         name: "XeroxSaaS",
         description: `Print Order #${order._id.slice(-4)}`,
         order_id: paymentOrder.id,
-        callback_url: `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/orders/verify-redirect`,
+        callback_url: `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/orders/verify-redirect?frontend=${encodeURIComponent(window.location.origin)}`,
         redirect: true,
         modal: {
           ondismiss: async function() {
