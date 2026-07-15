@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import s3, { BUCKET_NAME } from './config/s3';
 import Order from './models/Order';
 import Razorpay from 'razorpay';
+import { reconcilePendingOrders } from './controllers/orderController';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -10,14 +11,18 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET as string,
 });
 
-// Run every hour: '0 * * * *'
+// Run every 5 minutes: '*/5 * * * *'
 const runCleanup = () => {
   console.log('⏰ Initializing cleanup cron job...');
   
-  cron.schedule('0 * * * *', async () => {
-    console.log('🧹 Running scheduled cleanup...');
+  cron.schedule('*/5 * * * *', async () => {
+    console.log('🧹 Running scheduled cleanup & reconciliation...');
     try {
       const now = Date.now();
+      
+      // 0. RECONCILE PAYMENTS
+      await reconcilePendingOrders();
+
       const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
       const twentyFourHoursAgo = new Date(now - TWENTY_FOUR_HOURS);
 

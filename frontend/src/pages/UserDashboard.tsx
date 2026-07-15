@@ -48,7 +48,7 @@ const UserDashboard = () => {
 
   // Notification Modal State
   const [completedOrder, setCompletedOrder] = useState<any>(null);
-  const [refundNotification, setRefundNotification] = useState<any>(null);
+  const [refundNotifications, setRefundNotifications] = useState<any[]>([]);
 
   // Processing guard (prevents double-clicks)
   const [isProcessing, setIsProcessing] = useState(false);
@@ -529,7 +529,7 @@ const UserDashboard = () => {
                setCompletedOrder(updatedOrder);
             }
             if (updatedOrder.paymentStatus === 'REFUNDED') {
-               setRefundNotification(updatedOrder);
+               setRefundNotifications(prev => [...prev, updatedOrder]);
             }
         }
 
@@ -603,8 +603,28 @@ const UserDashboard = () => {
         name: "XeroxSaaS",
         description: `Print Order #${order._id.slice(-4)}`,
         order_id: paymentOrder.id,
-        callback_url: `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/orders/verify-redirect?frontend=${encodeURIComponent(window.location.origin)}`,
-        redirect: true,
+        handler: async function (response: any) {
+           try {
+              const verifyRes = await api.post('/orders/verify', {
+                 orderId: order._id,
+                 razorpay_payment_id: response.razorpay_payment_id,
+                 razorpay_order_id: response.razorpay_order_id,
+                 razorpay_signature: response.razorpay_signature
+              });
+              
+              if(verifyRes.data.status === 'success'){
+                 toast.success('Payment Successful! Order sent to shop.');
+                 setCart([]);
+                 setStep('upload');
+                 localStorage.removeItem(CART_STORAGE_KEY);
+                 fetchOrders();
+              }
+           } catch (_err) {
+              toast.error('Payment Verification Failed');
+           } finally {
+              setIsProcessing(false);
+           }
+        },
         modal: {
           ondismiss: async function() {
              toast.error('Payment Cancelled');
@@ -627,6 +647,7 @@ const UserDashboard = () => {
       
       paymentObject.on('payment.failed', async function (response: any){
           toast.error(response.error.description);
+          setIsProcessing(false);
           try {
              await api.put(`/orders/${order._id}/cancel`); 
           } catch (_e) { console.error('Failed to cancel order'); }
@@ -636,7 +657,6 @@ const UserDashboard = () => {
 
     } catch (_err) {
       toast.error('Order processing failed');
-    } finally {
       setIsProcessing(false);
     }
   };
@@ -917,7 +937,7 @@ const UserDashboard = () => {
               </div>
            </div>
         )}
-        {refundNotification && (
+        {refundNotifications.length > 0 && (
            <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
               <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
                  <div className="mx-auto w-20 h-20 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mb-6">
@@ -925,9 +945,9 @@ const UserDashboard = () => {
                  </div>
                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Refund Initiated</h2>
                  <p className="text-slate-500 dark:text-slate-400 mb-6">
-                    Order <span className="font-mono font-bold">#{refundNotification._id.slice(-4)}</span> was cancelled. Refund processed.
+                    Order <span className="font-mono font-bold">#{refundNotifications[0]._id.slice(-4)}</span> was cancelled. Refund processed.
                  </p>
-                 <button onClick={() => setRefundNotification(null)} className="w-full btn btn-outline py-3 text-lg font-bold">Close</button>
+                 <button onClick={() => setRefundNotifications(prev => prev.slice(1))} className="w-full btn btn-outline py-3 text-lg font-bold">Close</button>
               </div>
            </div>
         )}
@@ -962,7 +982,7 @@ const UserDashboard = () => {
               </div>
            </div>
         )}
-        {refundNotification && (
+        {refundNotifications.length > 0 && (
            <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
               <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
                  <div className="mx-auto w-20 h-20 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mb-6">
@@ -970,9 +990,9 @@ const UserDashboard = () => {
                  </div>
                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Refund Initiated</h2>
                  <p className="text-slate-500 dark:text-slate-400 mb-6">
-                    Order <span className="font-mono font-bold">#{refundNotification._id.slice(-4)}</span> was cancelled. Refund processed.
+                    Order <span className="font-mono font-bold">#{refundNotifications[0]._id.slice(-4)}</span> was cancelled. Refund processed.
                  </p>
-                 <button onClick={() => setRefundNotification(null)} className="w-full btn btn-outline py-3 text-lg font-bold">Close</button>
+                 <button onClick={() => setRefundNotifications(prev => prev.slice(1))} className="w-full btn btn-outline py-3 text-lg font-bold">Close</button>
               </div>
            </div>
         )}
@@ -1132,7 +1152,8 @@ const UserDashboard = () => {
       )}
 
       {/* Refund Notification Modal */}
-      {refundNotification && (
+      {/* Refund Notification Modal */}
+      {refundNotifications.length > 0 && (
           <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center animate-in fade-in zoom-in shadow-2xl relative overflow-hidden">
                 <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-red-300 via-transparent to-transparent pointer-events-none" />
@@ -1141,10 +1162,10 @@ const UserDashboard = () => {
                 </div>
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Refund Initiated</h2>
                 <p className="text-slate-500 dark:text-slate-400 mb-6">
-                  Your order <span className="font-mono font-bold text-slate-800 dark:text-slate-200">#{refundNotification._id.slice(-4)}</span> was cancelled.
+                  Your order <span className="font-mono font-bold text-slate-800 dark:text-slate-200">#{refundNotifications[0]._id.slice(-4)}</span> was cancelled.
                   <br/>A full refund has been processed to your source account.
                 </p>
-                <button onClick={() => setRefundNotification(null)} className="w-full btn btn-outline border-slate-200 dark:border-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 py-3 text-lg font-bold">Close</button>
+                <button onClick={() => setRefundNotifications(prev => prev.slice(1))} className="w-full btn btn-outline border-slate-200 dark:border-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 py-3 text-lg font-bold">Close</button>
             </div>
           </div>
       )}
