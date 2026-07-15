@@ -41,10 +41,10 @@ const UserDashboard = () => {
   const [showMap, setShowMap] = useState(false);
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [myOrders, setMyOrders] = useState<any[]>([]);
+  const [isCheckingOut, setIsCheckingOut] = useState(false); // BUG-017: prevent double-click
   
   // Notification Modal State
   const [completedOrder, setCompletedOrder] = useState<any>(null);
-  const [refundNotification, setRefundNotification] = useState<any>(null);
 
   // Calculate Distance (Haversine Formula)
   const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -142,7 +142,7 @@ const UserDashboard = () => {
         fileHash: fileData.fileHash,
         pageCount: fileData.pageCount || 1,
         previewUrl: fileData.previewUrl,
-        fileType: fileData.mimeType,
+        fileType: fileData.fileType || fileData.originalName.split('.').pop()?.toLowerCase() || 'unknown', // BUG-012: store extension, not MIME
         config: {
           color: 'bw' as 'bw',
           side: 'single' as 'single',
@@ -163,21 +163,43 @@ const UserDashboard = () => {
     setCart(newCart);
   };
 
+  // BUG-001: Fixed pricing calculation — matches backend logic exactly
+  const calculateItemCost = (item: CartItem, shop: any): number => {
+    if (!shop) return 0;
+    const isColor = item.config.color === 'color';
+    const isDouble = item.config.side === 'double' && item.pageCount > 1;
+    const size = item.config.paperSize || 'A4';
+    const copies = item.config.copies || 1;
+    const pageCount = item.pageCount || 1;
+    const totalSheets = pageCount * copies;
+
+    let rate = 0;
+
+    // Large format (A3, A2, A1)
+    if (size !== 'A4' && shop.pricing?.otherSizes?.[size]) {
+      const sizePricing = shop.pricing.otherSizes[size];
+      rate = isColor ? sizePricing.color : sizePricing.bw;
+      if (isDouble) rate = rate * 2;
+    } else {
+      // Standard A4
+      const bulk = shop.pricing?.bulkDiscount;
+      if (bulk?.enabled && totalSheets >= bulk.threshold) {
+        rate = isColor ? bulk.colorPrice : bulk.bwPrice;
+      } else {
+        if (isColor) {
+          rate = isDouble ? shop.pricing?.color?.double : shop.pricing?.color?.single;
+        } else {
+          rate = isDouble ? shop.pricing?.bw?.double : shop.pricing?.bw?.single;
+        }
+      }
+    }
+
+    return (rate || 0) * totalSheets;
+  };
+
   const calculateTotal = () => {
     if (!selectedShop) return 0;
-    return cart.reduce((total, item) => {
-      // Determine base rate object (BW vs Color)
-      const rateObj = item.config.color === 'bw' 
-        ? selectedShop.pricing.bw 
-        : selectedShop.pricing.color;
-      
-      // Determine specific rate (Single vs Double)
-      // If 1 page, always force single rate even if double selected (safety)
-      const isDouble = item.config.side === 'double' && item.pageCount > 1;
-      const rate = isDouble ? rateObj.double : rateObj.single;
-
-      return total + (rate * item.pageCount * item.config.copies);
-    }, 0);
+    return cart.reduce((total, item) => total + calculateItemCost(item, selectedShop), 0);
   };
 
   const handleScanResult = async (result: string) => {
@@ -239,143 +261,179 @@ const UserDashboard = () => {
      }
   };
 
-  // Socket Listener for Notifications
+  // BUG-010: Fixed socket cleanup — create once, clean up properly
   useEffect(() => {
-    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
+    if (!user?._id) return;
 
-    socket.emit('join_user', user?._id);
+    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
+      transports: ['websocket'],
+      reconnection: true
+    });
 
+    socket.emit('join_user', user._id);
 
-     socket.on('notification', (data: any) => {
-        if (data.type === 'error') toast.error(data.message, { duration: 5000 });
-        else toast(data.message, { icon: 'ℹ️', duration: 5000 });
-     });
+    const handleNotification = (data: any) => {
+      if (data.type === 'error') toast.error(data.message, { duration: 5000 });
+      else if (data.type === 'success') toast.success(data.message, { duration: 5000 });
+      else toast(data.message, { icon: 'ℹ️', duration: 5000 });
+    };
 
-     const handleOrderUpdate = (updatedOrder: any) => {
-        // 1. Check if this order belongs to the logged-in user
-        const orderUserId = typeof updatedOrder.user === 'string' ? updatedOrder.user : updatedOrder.user?._id;
-        
-        if (user && orderUserId === user._id) {
-            if (updatedOrder.orderStatus === 'READY') {
-               toast.success(`Order #${updatedOrder._id.slice(-4)} is READY for pickup!`, { duration: 5000, icon: '🎉' });
-            }
-            if (updatedOrder.orderStatus === 'COMPLETED') {
-               setCompletedOrder(updatedOrder);
-            }
-            if (updatedOrder.paymentStatus === 'REFUNDED') {
-               setRefundNotification(updatedOrder);
-            }
+    const handleOrderUpdate = (updatedOrder: any) => {
+      const orderUserId = typeof updatedOrder.user === 'string'
+        ? updatedOrder.user
+        : updatedOrder.user?._id;
+
+      if (user && orderUserId === user._id) {
+        if (updatedOrder.orderStatus === 'READY') {
+          toast.success(`Order #${updatedOrder._id.slice(-4)} is READY for pickup! Show your code.`, { duration: 8000, icon: '🎉' });
         }
+        if (updatedOrder.orderStatus === 'PRINTING') {
+          toast(`Order #${updatedOrder._id.slice(-4)} is now being printed!`, { icon: '🖨️', duration: 5000 });
+        }
+        if (updatedOrder.orderStatus === 'COMPLETED') {
+          setCompletedOrder(updatedOrder);
+        }
+      }
 
-        // 2. Update the list if it exists
-        setMyOrders(prev => {
-           const exists = prev.find(o => o._id === updatedOrder._id);
-           if (exists) {
-              return prev.map(o => o._id === updatedOrder._id ? updatedOrder : o);
-           }
-           return prev;
-        });
-     };
+      setMyOrders(prev => {
+        const exists = prev.find(o => o._id === updatedOrder._id);
+        if (exists) return prev.map(o => o._id === updatedOrder._id ? updatedOrder : o);
+        return prev;
+      });
+    };
 
-     socket.on('order_status_updated', handleOrderUpdate);
-     socket.on('order_updated', handleOrderUpdate); 
+    socket.on('notification', handleNotification);
+    socket.on('order_status_updated', handleOrderUpdate);
+    socket.on('order_updated', handleOrderUpdate);
 
-     return () => { socket.disconnect(); };
-  }, [user]);
+    return () => {
+      socket.off('notification', handleNotification);
+      socket.off('order_status_updated', handleOrderUpdate);
+      socket.off('order_updated', handleOrderUpdate);
+      socket.disconnect();
+    };
+  }, [user?._id]);
 
   // ... (rest of code)
 
   const handleCheckout = async () => {
-    if (cart.length === 0 || !selectedShop) return;
-    
-    const res = await loadRazorpay();
-    if (!res) {
-      toast.error('Razorpay SDK failed to load. Are you online?');
+    if (cart.length === 0 || !selectedShop || isCheckingOut) return;
+
+    const total = calculateTotal();
+    if (total < 1) {
+      toast.error('Order total must be at least ₹1. Please check your configuration.');
       return;
     }
 
-    // Map cart items to match Backend Schema
-    const orderItems = cart.map(item => {
-       const rate = item.config.color === 'bw' 
-          ? selectedShop.pricing.bw.single 
-          : selectedShop.pricing.color.single;
-       const cost = rate * item.pageCount * item.config.copies;
-       
-       return {
-          ...item,
-          calculatedCost: cost // <--- Added missing field
-       };
-    });
+    setIsCheckingOut(true); // BUG-017: Prevent double-click
+
+    const sdkLoaded = await loadRazorpay();
+    if (!sdkLoaded) {
+      toast.error('Razorpay SDK failed to load. Are you online?');
+      setIsCheckingOut(false);
+      return;
+    }
+
+    // BUG-001: Send items without calculatedCost — backend always recalculates
+    const orderItems = cart.map(item => ({
+      storageKey: item.storageKey,
+      originalName: item.originalName,
+      fileHash: item.fileHash,
+      pageCount: item.pageCount,
+      fileType: item.fileType,
+      config: item.config,
+      calculatedCost: 0 // Backend will recalculate — this value is ignored server-side
+    }));
+
+    let orderId: string | null = null;
 
     try {
       // 1. Create Order in Backend
       const { data: order } = await api.post('/orders', {
         shopId: selectedShop._id,
-        items: orderItems // <--- Send the mapped items
+        items: orderItems
       });
+      orderId = order._id;
 
       // 2. Init Payment in Backend
       const { data: paymentOrder } = await api.post('/orders/checkout', { orderId: order._id });
 
-      // 3. Open Razorpay Options
+      // 3. Open Razorpay Checkout
       const options = {
-        key: paymentOrder.keyId, 
+        key: paymentOrder.keyId,
         amount: paymentOrder.amount,
         currency: paymentOrder.currency,
-        name: "XeroxSaaS",
+        name: 'Anti-Print',
         description: `Print Order #${order._id.slice(-4)}`,
         order_id: paymentOrder.id,
-        // Handle Success
+
+        // Payment Success Handler
         handler: async function (response: any) {
-           try {
-              const verifyRes = await api.post('/orders/verify', {
-                 orderId: order._id,
-                 razorpay_payment_id: response.razorpay_payment_id,
-                 razorpay_order_id: response.razorpay_order_id,
-                 razorpay_signature: response.razorpay_signature
-              });
-              
-              if(verifyRes.data.status === 'success'){
-                 toast.success('Payment Successful!');
-                 setCart([]);
-                 setShowMobileCart(false);
-              }
-           } catch (err) {
-              toast.error('Payment Verification Failed');
-           }
-        },
-        // Handle Dismissal (User closes popup)
-        modal: {
-          ondismiss: async function() {
-             toast.error('Payment Cancelled');
-             try {
-                await api.put(`/orders/${order._id}/cancel`);
-             } catch(e) { console.error('Failed to cancel order'); }
+          try {
+            const verifyRes = await api.post('/orders/verify', {
+              orderId: order._id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_signature: response.razorpay_signature
+            });
+            if (verifyRes.data.status === 'success') {
+              toast.success('🎉 Payment Successful! Your order is being sent to the shop.', { duration: 5000 });
+              setCart([]);
+              setShowMobileCart(false);
+              fetchOrders(); // Refresh orders list
+            }
+          } catch (err: any) {
+            toast.error(err.response?.data?.message || 'Payment verification failed. Contact support if amount was deducted.');
+          } finally {
+            setIsCheckingOut(false);
           }
         },
+
+        // BUG-003: Modal dismiss — order is UNPAID, safe to cancel
+        modal: {
+          ondismiss: async function () {
+            toast('Payment cancelled.', { icon: 'ℹ️' });
+            // Cancel the unpaid order (paymentStatus is still PENDING)
+            if (orderId) {
+              try {
+                await api.put(`/orders/${orderId}/cancel`);
+              } catch (e) {
+                console.error('[checkout] Failed to cancel order on dismiss:', e);
+              }
+            }
+            setIsCheckingOut(false);
+          }
+        },
+
         prefill: {
           name: user?.name,
           email: user?.email,
         },
         theme: {
-          color: "#3399cc"
+          color: '#EAFF00'
         }
       };
 
       const paymentObject = new (window as any).Razorpay(options);
-      
-      // Handle Failure (e.g. Bank failure)
-      paymentObject.on('payment.failed', async function (response: any){
-          toast.error(response.error.description);
+
+      // BUG-003: payment.failed — also cancel the UNPAID order
+      paymentObject.on('payment.failed', async function (response: any) {
+        toast.error(`Payment failed: ${response.error.description}`);
+        if (orderId) {
           try {
-             await api.put(`/orders/${order._id}/cancel`); 
-          } catch(e) { console.error('Failed to cancel order'); }
+            await api.put(`/orders/${orderId}/cancel`);
+          } catch (e) {
+            console.error('[checkout] Failed to cancel order on payment failure:', e);
+          }
+        }
+        setIsCheckingOut(false);
       });
 
       paymentObject.open();
 
     } catch (err: any) {
-      toast.error('Order processing failed');
+      toast.error(err.response?.data?.message || 'Order creation failed. Please try again.');
+      setIsCheckingOut(false);
     }
   };
 
@@ -458,7 +516,8 @@ const UserDashboard = () => {
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                      />
                      {shops.map(shop => {
-                        const [lat, lng] = shop.location?.coordinates || [0, 0];
+                        // BUG-006: GeoJSON stores [lng, lat], Leaflet needs [lat, lng]
+                        const [lng, lat] = shop.location?.coordinates || [0, 0];
                         if(lat === 0 && lng === 0) return null;
                         return (
                            <Marker key={shop._id} position={[lat, lng]}>
@@ -561,7 +620,8 @@ const UserDashboard = () => {
                                   </div>
                                   <p className="text-xs text-slate-500 dark:text-slate-400">{new Date(order.createdAt).toLocaleString()} • ₹{order.totalAmount}</p>
                                </div>
-                               {order.orderStatus === 'QUEUED' && (
+                               {/* Only allow cancel if UNPAID (paymentStatus PENDING) */}
+                               {order.orderStatus === 'QUEUED' && order.paymentStatus === 'PENDING' && (
                                   <button onClick={() => handleCancelOrder(order._id)} className="btn btn-outline text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 border-red-200 dark:border-red-900 text-xs py-1.5 px-2 shrink-0">
                                      Cancel
                                   </button>
@@ -805,7 +865,7 @@ const UserDashboard = () => {
                     </p>
                   </div>
                   <span className="font-bold text-slate-700 dark:text-slate-200">
-                     ₹{((item.config.color === 'bw' ? selectedShop.pricing?.bw?.single : selectedShop.pricing?.color?.single) * item.pageCount * item.config.copies).toFixed(2)}
+                     ₹{calculateItemCost(item, selectedShop).toFixed(2)}
                   </span>
                 </div>
               ))}
@@ -819,10 +879,10 @@ const UserDashboard = () => {
 
               <button
                 onClick={handleCheckout}
-                disabled={cart.length === 0}
-                className="w-full btn btn-primary font-bold text-lg shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={cart.length === 0 || isCheckingOut}
+                className="w-full btn btn-primary font-bold text-lg shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Pay & Print
+                {isCheckingOut ? <><Loader2 size={20} className="animate-spin" /> Processing...</> : 'Pay & Print'}
               </button>
             </div>
           </div>
@@ -866,7 +926,7 @@ const UserDashboard = () => {
                     </p>
                   </div>
                   <span className="font-bold text-slate-700 dark:text-slate-200 shrink-0">
-                     ₹{((item.config.color === 'bw' ? selectedShop.pricing?.bw?.single : selectedShop.pricing?.color?.single) * item.pageCount * item.config.copies).toFixed(2)}
+                     ₹{calculateItemCost(item, selectedShop).toFixed(2)}
                   </span>
                 </div>
               ))}
@@ -879,9 +939,10 @@ const UserDashboard = () => {
               </div>
               <button
                 onClick={handleCheckout}
-                className="w-full btn btn-primary font-bold text-lg py-3"
+                disabled={cart.length === 0 || isCheckingOut}
+                className="w-full btn btn-primary font-bold text-lg py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Pay & Print
+                {isCheckingOut ? <><Loader2 size={20} className="animate-spin" /> Processing...</> : 'Pay & Print'}
               </button>
             </div>
           </div>
@@ -906,23 +967,7 @@ const UserDashboard = () => {
           </div>
       )}
 
-      {/* Refund Notification Modal */}
-      {refundNotification && (
-          <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center animate-in fade-in zoom-in shadow-2xl relative overflow-hidden">
-                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-red-300 via-transparent to-transparent pointer-events-none" />
-                <div className="mx-auto w-20 h-20 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mb-6">
-                  <Info size={40} className="text-red-600 dark:text-red-400" />
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Refund Initiated</h2>
-                <p className="text-slate-500 dark:text-slate-400 mb-6">
-                  Your order <span className="font-mono font-bold text-slate-800 dark:text-slate-200">#{refundNotification._id.slice(-4)}</span> was cancelled.
-                  <br/>A full refund has been processed to your source account.
-                </p>
-                <button onClick={() => setRefundNotification(null)} className="w-full btn btn-outline border-slate-200 dark:border-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 py-3 text-lg font-bold">Close</button>
-            </div>
-          </div>
-      )}
+      {/* No refund modal — policy is no cancellation after payment */}
     </div>
   );
 }
