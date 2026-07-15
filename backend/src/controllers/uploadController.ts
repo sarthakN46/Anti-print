@@ -296,7 +296,47 @@ export const getDownloadUrl = async (req: AuthRequest, res: Response): Promise<v
 
       res.json({ downloadUrl: url });
    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Failed to generate download URL' });
+     }
+  };
+
+// @desc    Get Signed URL for Inline Preview (fast direct streaming)
+// @route   POST /api/upload/preview-url
+// @access  Private (Owner/Employee only)
+export const getPreviewUrl = async (req: AuthRequest, res: Response): Promise<void> => {
+   try {
+      const { storageKey } = req.body;
+      if (!storageKey || !isValidStorageKey(storageKey)) {
+         res.status(400).json({ message: 'Invalid or missing storage key' });
+         return;
+      }
+
+      // --- IDOR PROTECTION ---
+      let callerShopId = '';
+      if (req.user?.role === 'EMPLOYEE' && req.user.associatedShop) {
+         callerShopId = req.user.associatedShop.toString();
+      } else {
+         const callerShop = await Shop.findOne({ owner: req.user?._id });
+         if (callerShop) callerShopId = callerShop._id.toString();
+      }
+
+      if (!callerShopId || !storageKey.includes(callerShopId)) {
+         res.status(403).json({ message: 'Unauthorized access to this file' });
+         return;
+      }
+
+      const url = await s3.getSignedUrlPromise('getObject', {
+         Bucket: BUCKET_NAME,
+         Key: storageKey,
+         Expires: 3600, // 1 hour
+         ResponseContentDisposition: 'inline',
+         ResponseContentType: 'application/pdf'
+      });
+
+      res.json({ previewUrl: url });
+   } catch (error) {
       console.error(error);
-      res.status(500).json({ message: 'Failed to generate download URL' });
+      res.status(500).json({ message: 'Failed to generate preview URL' });
    }
 };

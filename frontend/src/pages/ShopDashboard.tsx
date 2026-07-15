@@ -37,6 +37,10 @@ const ShopDashboard = () => {
   const [showEmployeeModal, setShowEmployeeModal] = useState(false);
   const [showQR, setShowQR] = useState(false);
   
+  // PDF Pre-fetching Cache
+  const [pdfCache, setPdfCache] = useState<Record<string, string>>({});
+  const fetchQueue = React.useRef<Set<string>>(new Set());
+
   // Print State
   const [autoPrintTriggered, setAutoPrintTriggered] = useState(false);
 
@@ -233,6 +237,51 @@ const ShopDashboard = () => {
     }
   }, [socket, shop]);
 
+  // Function to prefetch PDF
+  const prefetchPdf = async (storageKey: string) => {
+    if (pdfCache[storageKey] || fetchQueue.current.has(storageKey)) return;
+    fetchQueue.current.add(storageKey);
+
+    try {
+      const { data } = await api.post('/upload/preview-url', { storageKey });
+      const presignedUrl = data.previewUrl;
+      const response = await fetch(presignedUrl);
+      if (!response.ok) throw new Error('Network response was not ok');
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      
+      setPdfCache(prev => ({ ...prev, [storageKey]: objectUrl }));
+
+      // 10-Minute Expiry
+      setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+        setPdfCache(prev => {
+          const newCache = { ...prev };
+          delete newCache[storageKey];
+          return newCache;
+        });
+        fetchQueue.current.delete(storageKey);
+      }, 10 * 60 * 1000);
+
+    } catch (e) {
+      console.error('Failed to prefetch PDF:', e);
+      fetchQueue.current.delete(storageKey);
+    }
+  };
+
+  // Pre-fetch effect when orders change
+  useEffect(() => {
+    const queuedOrders = orders.filter(o => o.orderStatus === 'QUEUED');
+    queuedOrders.forEach(order => {
+      order.items.forEach((item: any) => {
+        const key = item.convertedKey || item.storageKey;
+        if (key && !pdfCache[key] && !fetchQueue.current.has(key)) {
+          prefetchPdf(key);
+        }
+      });
+    });
+  }, [orders]);
+
 
   const markCompleted = async (orderId: string) => {
     if (processingOrderId) return;
@@ -302,7 +351,6 @@ const ShopDashboard = () => {
      try {
        toast.loading('Loading document...', { id: 'preview-loader' });
        
-       // Call the download URL endpoint to get a signed link to the original file
        try {
           const { data } = await api.post('/upload/download-url', { storageKey: originalKey, originalName });
           setDownloadUrl(data.downloadUrl);
@@ -312,22 +360,19 @@ const ShopDashboard = () => {
        }
        setPreviewOriginalName(originalName);
 
-       // Call the NEW conversion endpoint
-       const response = await api.post('/upload/preview-pdf', { storageKey: previewKey }, {
-          responseType: 'blob' // We expect a binary blob
-       });
-
-       const blob = new Blob([response.data], { type: response.headers['content-type'] });
-       const url = URL.createObjectURL(blob);
-       
-       setPreviewUrl(url);
-
-       const type = response.headers['content-type'];
-       if (type.startsWith('image/')) {
-          setPreviewType('img');
-       } else {
-          setPreviewType('pdf'); // Everything else is PDF now
+       // If we have a cached Blob URL, use it instantly!
+       if (pdfCache[previewKey]) {
+          setPreviewUrl(pdfCache[previewKey]);
+          setPreviewType('pdf'); // Pre-fetched converted keys are always PDFs
+          toast.dismiss('preview-loader');
+          if (autoPrint) setAutoPrintTriggered(true);
+          return;
        }
+
+       // Fallback: Fetch signed URL instantly without buffering on backend
+       const { data } = await api.post('/upload/preview-url', { storageKey: previewKey });
+       setPreviewUrl(data.previewUrl);
+       setPreviewType('pdf'); // Let browser viewer handle it
        
        toast.dismiss('preview-loader');
        
@@ -335,7 +380,7 @@ const ShopDashboard = () => {
 
      } catch (_e) { 
         toast.dismiss('preview-loader');
-        toast.error('Could not load file. Server conversion failed.');
+        toast.error('Could not load file. Streaming failed.');
      }
   };
 
@@ -490,13 +535,13 @@ const ShopDashboard = () => {
                <div className="flex gap-4">
                   <button 
                     onClick={() => setActiveTab('active')}
-                    className={`text-sm font-bold pb-1 border-b-2 transition-colors ${activeTab === 'active' ? 'text-primary border-primary' : 'text-slate-400 border-transparent hover:text-slate-600 dark:hover:text-slate-300'}`}
+                    className={`text-sm font-bold pb-1 border-b-2 transition-colors ${activeTab === 'active' ? 'text-slate-900 border-slate-900 dark:text-white dark:border-white' : 'text-slate-400 border-transparent hover:text-slate-600 dark:hover:text-slate-300'}`}
                   >
                     Queue ({orders.filter(o => ['QUEUED', 'PRINTING', 'READY'].includes(o.orderStatus)).length})
                   </button>
                   <button 
                     onClick={() => setActiveTab('history')}
-                    className={`text-sm font-bold pb-1 border-b-2 transition-colors ${activeTab === 'history' ? 'text-primary border-primary' : 'text-slate-400 border-transparent hover:text-slate-600 dark:hover:text-slate-300'}`}
+                    className={`text-sm font-bold pb-1 border-b-2 transition-colors ${activeTab === 'history' ? 'text-slate-900 border-slate-900 dark:text-white dark:border-white' : 'text-slate-400 border-transparent hover:text-slate-600 dark:hover:text-slate-300'}`}
                   >
                     Completed
                   </button>
@@ -526,25 +571,25 @@ const ShopDashboard = () => {
                </div>
             </div>
             
-            <div className="overflow-auto flex-1">
-              <table className="w-full text-left border-collapse min-w-[600px]">
-                <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-xs uppercase font-semibold sticky top-0 z-10">
-                  <tr><th className="p-4">Order ID</th><th className="p-4">Order Time</th><th className="p-4">User</th><th className="p-4">Files & Config</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                  {filteredOrders.length === 0 ? (
-                    <tr><td colSpan={6} className="p-8 text-center text-slate-400">No {activeTab} orders.</td></tr>
-                  ) : (
-                    filteredOrders.map((order) => (
-                      <tr key={order._id} style={{ backgroundColor: getUserColor(order.user?._id) }} className="hover:brightness-95 dark:hover:bg-slate-700 transition-colors dark:text-white border-b-2 border-slate-200 dark:border-slate-600">
-                        <td className="p-4 font-mono text-sm font-bold text-slate-700 dark:text-slate-400">#{order._id.slice(-6)}</td>
-                        <td className="p-4 text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                          {new Date(order.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}
-                        </td>
-                        <td className="p-4 font-medium text-slate-900 dark:text-white">
+            <div className="overflow-auto flex-1 p-2">
+                <table className="w-full text-left border-separate min-w-[600px] border-spacing-y-3">
+                  <thead className="text-slate-500 dark:text-slate-400 text-xs uppercase font-semibold sticky top-0 z-10 bg-white dark:bg-slate-800">
+                    <tr><th className="p-4">Order ID</th><th className="p-4">Order Time</th><th className="p-4">User</th><th className="p-4">Files & Config</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
+                  </thead>
+                  <tbody>
+                    {filteredOrders.length === 0 ? (
+                      <tr><td colSpan={6} className="p-8 text-center text-slate-400">No {activeTab} orders.</td></tr>
+                    ) : (
+                      filteredOrders.map((order) => (
+                        <tr key={order._id} style={{ backgroundColor: getUserColor(order.user?._id) }} className="hover:brightness-95 dark:hover:bg-slate-700 transition-colors dark:text-white border border-slate-300 dark:border-slate-600 shadow-sm rounded-xl overflow-hidden">
+                          <td className="p-4 font-mono text-sm font-bold text-slate-700 dark:text-slate-400 border-y border-l border-slate-300 dark:border-slate-600 rounded-l-xl">#{order._id.slice(-6)}</td>
+                          <td className="p-4 text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap border-y border-slate-300 dark:border-slate-600">
+                            {new Date(order.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}
+                          </td>
+                          <td className="p-4 font-medium text-slate-900 dark:text-white border-y border-slate-300 dark:border-slate-600">
                            {order.user?.name || (order.user?.email ? order.user.email.split('@')[0] : 'Guest')}
                         </td>
-                        <td className="p-4">
+                        <td className="p-4 border-y border-slate-300 dark:border-slate-600">
                           <div className="space-y-3">
                             {order.items.map((item: any, idx: number) => (
                               <div key={idx} className="flex flex-col gap-1">
@@ -568,14 +613,14 @@ const ShopDashboard = () => {
                             ))}
                           </div>
                         </td>
-                        <td className="p-4">
-                          <span className="px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 border border-slate-900 text-slate-900 dark:border-slate-300 dark:text-slate-300">
-                            {order.orderStatus === 'QUEUED' ? <Clock size={12}/> : <CheckCircle size={12}/>}
-                            {order.orderStatus}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          {order.orderStatus === 'QUEUED' ? (
+                        <td className="p-4 border-y border-slate-300 dark:border-slate-600">
+                            <span className="px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 border border-slate-900 text-slate-900 dark:border-slate-300 dark:text-slate-300">
+                              {order.orderStatus === 'QUEUED' ? <Clock size={12}/> : <CheckCircle size={12}/>}
+                              {order.orderStatus}
+                            </span>
+                          </td>
+                          <td className="p-4 border-y border-r border-slate-300 dark:border-slate-600 rounded-r-xl">
+                            {order.orderStatus === 'QUEUED' ? (
                             <div className="flex gap-2">
                               <button onClick={() => markCompleted(order._id)} disabled={!!processingOrderId} className={`btn bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 text-xs py-2 px-4 shadow-none flex items-center gap-2 ${processingOrderId === order._id ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                 {processingOrderId === order._id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={16} />} Mark Done

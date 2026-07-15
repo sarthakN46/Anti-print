@@ -26,13 +26,23 @@ const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode,
   return children;
 };
 
+// Guard to prevent logged-in users from accessing auth/landing pages
+const PublicRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, isLoading } = useContext(AuthContext)!;
+  if (isLoading) return <div>Loading...</div>;
+  if (user) {
+    return <Navigate to={user.role === 'USER' ? '/user/dashboard' : '/shop/dashboard'} replace />;
+  }
+  return children;
+};
+
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register-shop" element={<RegisterShop />} />
-      <Route path="/register-user" element={<RegisterUser />} />
+      <Route path="/" element={<PublicRoute><Landing /></PublicRoute>} />
+      <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+      <Route path="/register-shop" element={<PublicRoute><RegisterShop /></PublicRoute>} />
+      <Route path="/register-user" element={<PublicRoute><RegisterUser /></PublicRoute>} />
       <Route path="/support" element={<Support />} />
 
       {/* Protected Routes for Shop Owners */}
