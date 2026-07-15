@@ -5,6 +5,7 @@ import {
   updateOrderStatus,
   createPaymentOrder,
   verifyPayment,
+  verifyPaymentRedirect,
   cancelOrder,
   cancelAllOrders,
   getShopHistory,
@@ -14,7 +15,9 @@ import { protect, authorize } from '../middlewares/authMiddleware';
 
 const router = express.Router();
 
-router.use(protect); // All order routes require login
+router.post('/verify-redirect', verifyPaymentRedirect);
+
+router.use(protect); // All other order routes require login
 
 router.post('/', createOrder);
 router.post('/checkout', createPaymentOrder);

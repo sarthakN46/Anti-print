@@ -204,7 +204,26 @@ const UserDashboard = () => {
   };
 
   useEffect(() => {
-    const shopId = searchParams.get('shopId');
+      // 1. Handle Razorpay Redirects
+      const successParam = searchParams.get('success');
+      const errorParam = searchParams.get('error');
+
+      if (successParam === 'true') {
+        toast.success('Payment Successful! Order sent to shop.');
+        setCart([]);
+        setStep('upload');
+        localStorage.removeItem(CART_STORAGE_KEY);
+        setSearchParams({}, { replace: true });
+        fetchOrders();
+        return; // Don't process shopId logic below
+      } else if (errorParam) {
+        toast.error(`Payment Failed: ${errorParam}`);
+        setSearchParams({}, { replace: true });
+        return;
+      }
+
+      // 2. Handle QR Shop Scan Redirect
+      const shopId = searchParams.get('shopId');
     if (!shopId) return;
     if (loadingShops) return;
 
@@ -584,28 +603,8 @@ const UserDashboard = () => {
         name: "XeroxSaaS",
         description: `Print Order #${order._id.slice(-4)}`,
         order_id: paymentOrder.id,
-        handler: async function (response: any) {
-           try {
-              const verifyRes = await api.post('/orders/verify', {
-                 orderId: order._id,
-                 razorpay_payment_id: response.razorpay_payment_id,
-                 razorpay_order_id: response.razorpay_order_id,
-                 razorpay_signature: response.razorpay_signature
-              });
-              
-              if(verifyRes.data.status === 'success'){
-                 toast.success('Payment Successful! Order sent to shop.');
-                 setCart([]);
-                 setStep('upload');
-                 localStorage.removeItem(CART_STORAGE_KEY);
-                 fetchOrders();
-              }
-           } catch (_err) {
-              toast.error('Payment Verification Failed');
-           } finally {
-              setIsProcessing(false);
-           }
-        },
+        callback_url: `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/orders/verify-redirect`,
+        redirect: true,
         modal: {
           ondismiss: async function() {
              toast.error('Payment Cancelled');

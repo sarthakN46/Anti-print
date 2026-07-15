@@ -9,6 +9,9 @@ import { validatePassword } from '../middlewares/securityMiddleware';
 
 const BCRYPT_ROUNDS = 12;
 
+// Helper: Strict Backblaze B2 S3 API URL encoding for CopySource
+const encodeS3URI = (str: string) => str.split('/').map(encodeURIComponent).join('/');
+
 // @desc    Register a new shop
 // @route   POST /api/shops
 // @access  Private (Owner)
@@ -46,12 +49,12 @@ export const createShop = async (req: AuthRequest, res: Response): Promise<void>
         const oldKey = image; 
         
         try {
-           // Copy
-           await s3.copyObject({
-             Bucket: BUCKET_NAME,
-             CopySource: encodeURI(`/${BUCKET_NAME}/${oldKey}`), 
-             Key: newKey
-           }).promise();
+             // Copy
+             await s3.copyObject({
+               Bucket: BUCKET_NAME,
+               CopySource: encodeS3URI(`${BUCKET_NAME}/${oldKey}`), // No leading slash for B2
+               Key: newKey
+             }).promise();
            
            // Delete Temp
            await s3.deleteObject({ Bucket: BUCKET_NAME, Key: oldKey }).promise().catch(console.error);

@@ -27,7 +27,8 @@ export interface IOrder extends Document {
   // Financials
   totalAmount: number;
   paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
-  paymentId?: string; // Razorpay ID
+  paymentId?: string; // Razorpay Payment ID
+  razorpayOrderId?: string; // Razorpay Order ID for strict verification
   
   // Workflow Status
   orderStatus: 'PENDING_PAYMENT' | 'QUEUED' | 'PROCESSING' | 'PRINTING' | 'READY' | 'COMPLETED' | 'CANCELLED';
@@ -66,6 +67,7 @@ const OrderSchema = new Schema<IOrder>({
     default: 'PENDING' 
   },
   paymentId: { type: String },
+  razorpayOrderId: { type: String },
 
   orderStatus: { 
     type: String, 
