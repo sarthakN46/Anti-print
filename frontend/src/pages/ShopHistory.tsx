@@ -143,7 +143,7 @@ const ShopHistory = () => {
                            <tr key={order._id} className="hover:bg-slate-50 transition-colors">
                               <td className="p-4 text-sm text-slate-600">
                                  {new Date(order.createdAt).toLocaleDateString()}
-                                 <div className="text-xs text-slate-400">{new Date(order.createdAt).toLocaleTimeString()}</div>
+                                 <div className="text-xs text-slate-400">{new Date(order.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
                               </td>
                               <td className="p-4 font-mono text-sm text-slate-500">#{order._id.slice(-6)}</td>
                               <td className="p-4 font-medium text-slate-800">{order.user?.name || 'Guest'}</td>
@@ -155,10 +155,7 @@ const ShopHistory = () => {
                               </td>
                               <td className="p-4 font-bold text-slate-800">₹{order.totalAmount}</td>
                               <td className="p-4">
-                                 <span className={`px-2 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1
-                                    ${order.orderStatus === 'COMPLETED' ? 'bg-green-100 text-green-700' : 
-                                      order.orderStatus === 'CANCELLED' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}
-                                 `}>
+                                 <span className="px-2 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 border border-slate-900 text-slate-900 dark:border-slate-300 dark:text-slate-300">
                                     {order.orderStatus === 'COMPLETED' ? <CheckCircle size={12}/> : 
                                      order.orderStatus === 'CANCELLED' ? <XCircle size={12}/> : <Clock size={12}/>}
                                     {order.orderStatus}

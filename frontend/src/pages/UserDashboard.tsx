@@ -602,11 +602,14 @@ const UserDashboard = () => {
               }
            } catch (_err) {
               toast.error('Payment Verification Failed');
+           } finally {
+              setIsProcessing(false);
            }
         },
         modal: {
           ondismiss: async function() {
              toast.error('Payment Cancelled');
+             setIsProcessing(false);
              try {
                 await api.put(`/orders/${order._id}/cancel`);
              } catch (_e) { console.error('Failed to cancel order'); }
@@ -812,13 +815,9 @@ const UserDashboard = () => {
                                <div className="min-w-0">
                                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                                      <span className="font-bold text-slate-800 dark:text-white">#{order._id.slice(-4)}</span>
-                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                        order.orderStatus === 'QUEUED' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' :
-                                        order.orderStatus === 'COMPLETED' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
-                                        order.orderStatus === 'CANCELLED' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-slate-100 dark:bg-slate-700'
-                                     }`}>{order.orderStatus}</span>
+                                     <span className="px-2 py-0.5 rounded text-[10px] font-bold border border-slate-900 text-slate-900 dark:border-slate-300 dark:text-slate-300">{order.orderStatus}</span>
                                   </div>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400">{new Date(order.createdAt).toLocaleString()} • ₹{order.totalAmount}</p>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">{new Date(order.createdAt).toLocaleString([], { hour: 'numeric', minute: '2-digit', hour12: true, month: 'short', day: 'numeric' })} • ₹{order.totalAmount}</p>
                                </div>
                                {order.orderStatus === 'QUEUED' && (
                                   <button onClick={() => handleCancelOrder(order._id)} className="btn btn-outline text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 border-red-200 dark:border-red-900 text-xs py-1.5 px-2 shrink-0">
@@ -1088,24 +1087,23 @@ const UserDashboard = () => {
                   {myOrders.length === 0 ? <p className="text-center text-slate-400 py-10">No orders yet.</p> :
                      myOrders.map(order => (
                         <div key={order._id} className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 sm:p-4 dark:bg-slate-800">
-                           <div className="flex justify-between items-start gap-2">
-                             <div className="min-w-0">
-                                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                   <span className="font-bold text-slate-800 dark:text-white">#{order._id.slice(-4)}</span>
-                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                      order.orderStatus === 'QUEUED' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' :
-                                      order.orderStatus === 'COMPLETED' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
-                                      order.orderStatus === 'CANCELLED' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-slate-100 dark:bg-slate-700'
-                                   }`}>{order.orderStatus}</span>
-                                </div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">{new Date(order.createdAt).toLocaleString()} • ₹{order.totalAmount}</p>
-                             </div>
-                             {order.orderStatus === 'QUEUED' && (
-                                <button onClick={() => handleCancelOrder(order._id)} className="btn btn-outline text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 border-red-200 dark:border-red-900 text-xs py-1.5 px-2 shrink-0">
-                                   Cancel
-                                </button>
-                             )}
+                           <div className="flex justify-between items-start mb-3 sm:mb-4">
+                              <div className="flex items-center gap-2">
+                                 <span className="font-mono font-bold text-slate-800 dark:text-slate-200">#{order._id.slice(-4)}</span>
+                                 <span className="px-2.5 py-1 rounded-full text-xs font-bold border border-slate-900 text-slate-900 dark:border-slate-300 dark:text-slate-300">
+                                    {order.orderStatus}
+                                 </span>
+                              </div>
+                              <div className="text-right">
+                                 <p className="font-bold text-slate-900 dark:text-white mb-0.5 text-sm sm:text-base">₹{order.totalAmount.toFixed(2)}</p>
+                                 <p className="text-xs text-slate-500 dark:text-slate-400">{new Date(order.createdAt).toLocaleString([], { hour: 'numeric', minute: '2-digit', hour12: true, month: 'short', day: 'numeric' })}</p>
+                              </div>
                            </div>
+                           {order.orderStatus === 'QUEUED' && (
+                              <button onClick={() => handleCancelOrder(order._id)} className="btn btn-outline text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 border-red-200 dark:border-red-900 text-xs py-1.5 px-2 w-full mt-2">
+                                 Cancel Order
+                              </button>
+                           )}
                         </div>
                      ))
                   }

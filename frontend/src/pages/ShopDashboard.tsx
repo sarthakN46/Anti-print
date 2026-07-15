@@ -474,13 +474,13 @@ const ShopDashboard = () => {
            {/* Stats */}
            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-              <p className="text-slate-500 dark:text-slate-400 text-sm mb-1">Queue Size</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.pending}</h3>
+              <p className="text-slate-900 font-bold dark:text-slate-300 text-sm mb-1">Queue Size</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.pending}</h3>
             </div>
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-              <p className="text-slate-500 dark:text-slate-400 text-sm mb-1">Completed Today</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.printed}</h3>
+              <p className="text-slate-900 font-bold dark:text-slate-300 text-sm mb-1">Completed Today</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.printed}</h3>
             </div>
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-              <p className="text-slate-500 dark:text-slate-400 text-sm mb-1">Revenue Estimate</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">₹{stats.revenue.toFixed(2)}</h3>
+              <p className="text-slate-900 font-bold dark:text-slate-300 text-sm mb-1">Revenue Estimate</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">₹{stats.revenue.toFixed(2)}</h3>
             </div>
           </div>
 
@@ -569,7 +569,7 @@ const ShopDashboard = () => {
                           </div>
                         </td>
                         <td className="p-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 ${order.orderStatus === 'QUEUED' ? 'bg-slate-800 text-white dark:bg-white dark:text-slate-900' : order.orderStatus === 'COMPLETED' ? 'bg-slate-200 text-slate-700 dark:bg-slate-600 dark:text-slate-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
+                          <span className="px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 border border-slate-900 text-slate-900 dark:border-slate-300 dark:text-slate-300">
                             {order.orderStatus === 'QUEUED' ? <Clock size={12}/> : <CheckCircle size={12}/>}
                             {order.orderStatus}
                           </span>
