@@ -277,7 +277,7 @@ export const verifyPayment = async (req: AuthRequest, res: Response): Promise<vo
 export const verifyPaymentRedirect = async (req: any, res: Response): Promise<void> => {
   try {
     const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
-    const frontendBaseUrl = req.query.frontend ? String(req.query.frontend) : (process.env.FRONTEND_URL || 'http://localhost:5173');
+    const frontendBaseUrl = req.query.frontend ? String(req.query.frontend) : (process.env.CLIENT_URL || 'http://localhost:5173');
     
     const order = await Order.findOne({ razorpayOrderId: razorpay_order_id });
     if (!order) {
@@ -326,7 +326,7 @@ export const verifyPaymentRedirect = async (req: any, res: Response): Promise<vo
     res.redirect(`${frontendBaseUrl}/user/dashboard?success=true`);
   } catch (error) {
     console.error("Redirect Verification Error:", error);
-    const frontendBaseUrl = req.query.frontend ? String(req.query.frontend) : (process.env.FRONTEND_URL || 'http://localhost:5173');
+    const frontendBaseUrl = req.query.frontend ? String(req.query.frontend) : (process.env.CLIENT_URL || 'http://localhost:5173');
     res.redirect(`${frontendBaseUrl}/user/dashboard?error=VerificationFailed`);
   }
 };
